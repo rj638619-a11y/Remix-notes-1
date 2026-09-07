@@ -139,7 +139,7 @@ fun VaultGalleryApp(
                     if (hiddenCount == movedCount) {
                         showToast("$movedCount photo${if (movedCount > 1) "s" else ""} moved & deleted from device")
                     } else if (pendingMediaUris.isNotEmpty()) {
-                        val batchSender = repository.createBatchDeleteSender(pendingMediaUris) ?: singleSender
+                        val batchSender = repository.createBatchDeleteSender(pendingMediaUris, VaultItemType.PHOTO) ?: singleSender
                         if (batchSender != null) {
                             try {
                                 deleteConfirmLauncher.launch(IntentSenderRequest.Builder(batchSender).build())

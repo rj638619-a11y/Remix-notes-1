@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -81,6 +82,7 @@ fun VaultSettingsApp(
     onLockNow: () -> Unit,
     onTriggerSetPin: () -> Unit,
     showToast: (String) -> Unit,
+    onPanicExit: () -> Unit = onLockNow,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -121,6 +123,12 @@ fun VaultSettingsApp(
 
     var biometricEnabled by remember { mutableStateOf(securityManager.isBiometricEnabled()) }
     var currentWallpaper by remember { mutableStateOf(securityManager.getWallpaper()) }
+
+    var panicFlip by remember { mutableStateOf(securityManager.isPanicFlipEnabled()) }
+    var panicShake by remember { mutableStateOf(securityManager.isPanicShakeEnabled()) }
+    var panicDoubleTap by remember { mutableStateOf(securityManager.isPanicDoubleTapEnabled()) }
+    var panicFloatingBtn by remember { mutableStateOf(securityManager.isPanicFloatingButtonEnabled()) }
+    var panicVibrate by remember { mutableStateOf(securityManager.isPanicVibrateEnabled()) }
 
     var showQuestionDialog by remember { mutableStateOf(false) }
     var showExportConfirm by remember { mutableStateOf(false) }
@@ -299,6 +307,183 @@ fun VaultSettingsApp(
                         Icon(Icons.Default.Lock, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Lock Vault Immediately", fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // Section: Smart Panic Mode
+                Text(
+                    text = "SMART PANIC MODE (EMERGENCY SWITCH)",
+                    color = Color(0xFFEF4444),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFF1E293B))
+                        .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.35f), RoundedCornerShape(16.dp))
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFFEF4444).copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Shield, contentDescription = null, tint = Color(0xFFEF4444), modifier = Modifier.size(20.dp))
+                        }
+                        Column {
+                            Text(
+                                text = "Emergency Fast Escape",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                            Text(
+                                text = "Instantly hide the vault and return to normal Notes if someone approaches",
+                                color = Color(0xFF94A3B8),
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    // 1. Flip Phone Face-Down Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Flip Face-Down", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text("Placing phone face down on desk/bed instantly locks & exits", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                        }
+                        Switch(
+                            checked = panicFlip,
+                            onCheckedChange = {
+                                panicFlip = it
+                                securityManager.setPanicFlipEnabled(it)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFFEF4444)
+                            )
+                        )
+                    }
+
+                    // 2. Shake to Panic Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Double-Shake Device", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text("Two quick shakes of the phone instantly triggers panic exit", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                        }
+                        Switch(
+                            checked = panicShake,
+                            onCheckedChange = {
+                                panicShake = it
+                                securityManager.setPanicShakeEnabled(it)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFFEF4444)
+                            )
+                        )
+                    }
+
+                    // 3. Status Bar Double-Tap Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Double-Tap Status Bar", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text("Double tap the top status bar / dynamic island to exit", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                        }
+                        Switch(
+                            checked = panicDoubleTap,
+                            onCheckedChange = {
+                                panicDoubleTap = it
+                                securityManager.setPanicDoubleTapEnabled(it)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFFEF4444)
+                            )
+                        )
+                    }
+
+                    // 4. Floating Emergency Panic Button Toggle
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Floating Panic Button", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text("Display an emergency red panic pill in vault apps", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                        }
+                        Switch(
+                            checked = panicFloatingBtn,
+                            onCheckedChange = {
+                                panicFloatingBtn = it
+                                securityManager.setPanicFloatingButtonEnabled(it)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFFEF4444)
+                            )
+                        )
+                    }
+
+                    // 5. Vibrate on Panic Exit
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                            Text("Haptic Feedback", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Text("Subtle vibration confirmation when panic mode activates", color = Color(0xFF94A3B8), fontSize = 11.sp)
+                        }
+                        Switch(
+                            checked = panicVibrate,
+                            onCheckedChange = {
+                                panicVibrate = it
+                                securityManager.setPanicVibrateEnabled(it)
+                            },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFFEF4444)
+                            )
+                        )
+                    }
+
+                    // Test Panic Mode Button
+                    Button(
+                        onClick = {
+                            showToast("Panic triggered! Switching to Notes...")
+                            onPanicExit()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Shield, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Test Smart Panic Switch", fontWeight = FontWeight.Bold)
                     }
                 }
 

@@ -128,7 +128,7 @@ fun VaultVideoPlayerApp(
                     if (hidden == count) {
                         showToast("$count video${if (count > 1) "s" else ""} moved & deleted from device")
                     } else if (pendingMediaUris.isNotEmpty()) {
-                        val batchSender = repository.createBatchDeleteSender(pendingMediaUris) ?: singleSender
+                        val batchSender = repository.createBatchDeleteSender(pendingMediaUris, VaultItemType.VIDEO) ?: singleSender
                         if (batchSender != null) {
                             try {
                                 deleteConfirmLauncher.launch(IntentSenderRequest.Builder(batchSender).build())

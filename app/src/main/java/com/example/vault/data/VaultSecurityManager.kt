@@ -111,6 +111,22 @@ class VaultSecurityManager(context: Context) {
         }
     }
 
+    // Panic Mode Settings
+    fun isPanicFlipEnabled(): Boolean = prefs.getBoolean(KEY_PANIC_FLIP, true)
+    fun setPanicFlipEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_PANIC_FLIP, enabled).apply()
+
+    fun isPanicShakeEnabled(): Boolean = prefs.getBoolean(KEY_PANIC_SHAKE, true)
+    fun setPanicShakeEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_PANIC_SHAKE, enabled).apply()
+
+    fun isPanicDoubleTapEnabled(): Boolean = prefs.getBoolean(KEY_PANIC_DOUBLE_TAP, true)
+    fun setPanicDoubleTapEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_PANIC_DOUBLE_TAP, enabled).apply()
+
+    fun isPanicFloatingButtonEnabled(): Boolean = prefs.getBoolean(KEY_PANIC_FLOATING_BTN, true)
+    fun setPanicFloatingButtonEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_PANIC_FLOATING_BTN, enabled).apply()
+
+    fun isPanicVibrateEnabled(): Boolean = prefs.getBoolean(KEY_PANIC_VIBRATE, true)
+    fun setPanicVibrateEnabled(enabled: Boolean) = prefs.edit().putBoolean(KEY_PANIC_VIBRATE, enabled).apply()
+
     companion object {
         private const val KEY_PIN_HASH = "vault_pin_hash"
         private const val KEY_LOCK_ENABLED = "vault_lock_enabled"
@@ -119,6 +135,11 @@ class VaultSecurityManager(context: Context) {
         private const val KEY_SEC_QUESTION = "vault_sec_question"
         private const val KEY_SEC_ANSWER_HASH = "vault_sec_answer_hash"
         private const val KEY_WALLPAPER = "vault_wallpaper"
+        private const val KEY_PANIC_FLIP = "vault_panic_flip"
+        private const val KEY_PANIC_SHAKE = "vault_panic_shake"
+        private const val KEY_PANIC_DOUBLE_TAP = "vault_panic_double_tap"
+        private const val KEY_PANIC_FLOATING_BTN = "vault_panic_floating_btn"
+        private const val KEY_PANIC_VIBRATE = "vault_panic_vibrate"
 
         val WALLPAPERS = listOf(
             WallpaperOption("midnight_glass", "Midnight Glass", 0xFF0D1117, 0xFF161B22, 0xFF58A6FF),

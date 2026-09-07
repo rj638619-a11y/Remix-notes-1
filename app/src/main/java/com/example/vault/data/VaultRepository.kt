@@ -456,7 +456,7 @@ class VaultRepository(private val context: Context) {
             )
 
             // Attempt to automatically delete the source file from main device to hide it
-            val deleteOutcome = tryDeleteSourceDetailed(uri, fileName, sizeBytes)
+            val deleteOutcome = tryDeleteSourceDetailed(uri, fileName, sizeBytes, type)
             val wasHidden = deleteOutcome.isDeleted
 
             val current = _itemsFlow.value.toMutableList()
@@ -476,22 +476,95 @@ class VaultRepository(private val context: Context) {
     }
 
     /**
+     * Resolves modern PhotoPicker, Document, or generic content URIs into standard MediaStore URIs
+     * that MediaStore.createDeleteRequest accepts on Android 11+.
+     */
+    fun resolveToStandardMediaStoreUri(uri: Uri, itemType: VaultItemType? = null): Uri? {
+        val uriStr = uri.toString()
+        // 1. Check if it is already a standard MediaStore external URI
+        if (uri.authority == "media" && (
+            uriStr.contains("/external/images/media/") ||
+            uriStr.contains("/external/video/media/") ||
+            uriStr.contains("/external/audio/media/") ||
+            uriStr.contains("/external/file/")
+        )) {
+            return uri
+        }
+
+        // 2. Modern Android PhotoPicker URI: content://...photopicker.../media/<numeric_id>
+        if (uriStr.contains("photopicker") || uriStr.contains("picker")) {
+            val numericId = uri.lastPathSegment?.toLongOrNull()
+                ?: uri.pathSegments.lastOrNull { it.toLongOrNull() != null }?.toLongOrNull()
+            if (numericId != null) {
+                return when (itemType) {
+                    VaultItemType.VIDEO -> ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, numericId)
+                    VaultItemType.AUDIO -> ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, numericId)
+                    VaultItemType.DOCUMENT -> ContentUris.withAppendedId(MediaStore.Files.getContentUri("external"), numericId)
+                    else -> ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, numericId)
+                }
+            }
+        }
+
+        // 3. Document Provider URIs (SAF)
+        try {
+            if (DocumentsContract.isDocumentUri(context, uri)) {
+                val docId = DocumentsContract.getDocumentId(uri)
+                if (docId.startsWith("image:")) {
+                    val id = docId.substringAfter("image:").toLongOrNull()
+                    if (id != null) return ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, id)
+                } else if (docId.startsWith("video:")) {
+                    val id = docId.substringAfter("video:").toLongOrNull()
+                    if (id != null) return ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, id)
+                } else if (docId.startsWith("audio:")) {
+                    val id = docId.substringAfter("audio:").toLongOrNull()
+                    if (id != null) return ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id)
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 4. Any numeric ID at end of URI
+        val endId = uri.lastPathSegment?.toLongOrNull()
+        if (endId != null && uri.scheme == "content") {
+            return when (itemType) {
+                VaultItemType.VIDEO -> ContentUris.withAppendedId(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, endId)
+                VaultItemType.AUDIO -> ContentUris.withAppendedId(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, endId)
+                VaultItemType.DOCUMENT -> ContentUris.withAppendedId(MediaStore.Files.getContentUri("external"), endId)
+                else -> ContentUris.withAppendedId(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, endId)
+            }
+        }
+
+        return null
+    }
+
+    /**
      * Creates a batch delete prompt IntentSender for multiple MediaStore items (Android 11+)
      */
-    fun createBatchDeleteSender(mediaUris: List<Uri>): IntentSender? {
+    fun createBatchDeleteSender(mediaUris: List<Uri>, itemType: VaultItemType? = null): IntentSender? {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && mediaUris.isNotEmpty()) {
             try {
-                val validUris = mediaUris.filter { it.authority?.contains("media") == true }.distinct()
-                if (validUris.isNotEmpty()) {
-                    return MediaStore.createDeleteRequest(context.contentResolver, validUris).intentSender
+                val standardUris = mediaUris.mapNotNull { 
+                    resolveToStandardMediaStoreUri(it, itemType) ?: it 
+                }.filter { 
+                    it.authority == "media" && it.scheme == "content" 
+                }.distinct()
+
+                if (standardUris.isNotEmpty()) {
+                    return MediaStore.createDeleteRequest(context.contentResolver, standardUris).intentSender
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
         return null
     }
 
-    private fun tryDeleteSourceDetailed(uri: Uri, fileName: String?, sourceSizeBytes: Long): InternalDeleteOutcome {
-        // 1. Try DocumentsContract if it is a SAF Document URI
+    private fun tryDeleteSourceDetailed(
+        uri: Uri,
+        fileName: String?,
+        sourceSizeBytes: Long,
+        itemType: VaultItemType? = null
+    ): InternalDeleteOutcome {
+        // 1. If it's a SAF Document URI, try deleteDocument
         try {
             if (DocumentsContract.isDocumentUri(context, uri)) {
                 if (DocumentsContract.deleteDocument(context.contentResolver, uri)) {
@@ -500,30 +573,55 @@ class VaultRepository(private val context: Context) {
             }
         } catch (_: Exception) {}
 
-        // 2. Try direct file scheme
-        if (uri.scheme == "file") {
-            try {
-                val f = File(uri.path ?: "")
+        // 2. Try direct contentResolver delete on original uri
+        try {
+            val count = context.contentResolver.delete(uri, null, null)
+            if (count > 0) {
+                return InternalDeleteOutcome(isDeleted = true)
+            }
+        } catch (e: SecurityException) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && e is RecoverableSecurityException) {
+                return InternalDeleteOutcome(
+                    isDeleted = false,
+                    intentSender = e.userAction.actionIntent.intentSender,
+                    mediaUri = uri
+                )
+            }
+        } catch (_: Exception) {}
+
+        // 3. Try direct file delete if file scheme or raw path
+        try {
+            if (uri.scheme == "file" && !uri.path.isNullOrBlank()) {
+                val f = File(uri.path!!)
                 if (f.exists() && f.delete()) {
                     return InternalDeleteOutcome(isDeleted = true)
                 }
-            } catch (_: Exception) {}
-        }
+            } else if (DocumentsContract.isDocumentUri(context, uri)) {
+                val docId = DocumentsContract.getDocumentId(uri)
+                if (docId.startsWith("raw:")) {
+                    val f = File(docId.substringAfter("raw:"))
+                    if (f.exists() && f.delete()) return InternalDeleteOutcome(isDeleted = true)
+                } else if (docId.startsWith("primary:")) {
+                    val f = File(Environment.getExternalStorageDirectory(), docId.substringAfter("primary:"))
+                    if (f.exists() && f.delete()) return InternalDeleteOutcome(isDeleted = true)
+                }
+            }
+        } catch (_: Exception) {}
 
-        // 3. Resolve actual MediaStore URI if possible
-        var resolvedMediaUri: Uri? = null
-        if (uri.authority?.contains("media") == true && !uri.toString().contains("picker")) {
-            resolvedMediaUri = uri
-        } else if (!fileName.isNullOrBlank()) {
-            val collections = listOf(
-                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                MediaStore.Files.getContentUri("external")
-            )
+        // 4. Resolve standard MediaStore URI (handles PhotoPicker, Document, etc.)
+        var resolvedMediaUri: Uri? = resolveToStandardMediaStoreUri(uri, itemType)
+
+        // 5. Query MediaStore by display name or size if still not resolved
+        if (resolvedMediaUri == null && !fileName.isNullOrBlank()) {
+            val collections = when (itemType) {
+                VaultItemType.PHOTO -> listOf(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, MediaStore.Files.getContentUri("external"))
+                VaultItemType.VIDEO -> listOf(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, MediaStore.Files.getContentUri("external"))
+                VaultItemType.AUDIO -> listOf(MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, MediaStore.Files.getContentUri("external"))
+                else -> listOf(MediaStore.Files.getContentUri("external"), MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+            }
             for (collection in collections) {
                 try {
-                    val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.SIZE)
+                    val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME)
                     val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
                     val selectionArgs = arrayOf(fileName)
                     context.contentResolver.query(collection, projection, selection, selectionArgs, null)?.use { cursor ->
@@ -540,42 +638,25 @@ class VaultRepository(private val context: Context) {
 
         val targetUri = resolvedMediaUri ?: uri
 
-        // 4. Try direct contentResolver delete
-        try {
-            val count = context.contentResolver.delete(targetUri, null, null)
-            if (count > 0) {
-                return InternalDeleteOutcome(isDeleted = true)
-            }
-        } catch (e: SecurityException) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && e is RecoverableSecurityException) {
-                return InternalDeleteOutcome(
-                    isDeleted = false,
-                    intentSender = e.userAction.actionIntent.intentSender,
-                    mediaUri = targetUri
-                )
-            }
-        } catch (_: Exception) {}
-
-        // 5. Try querying MediaStore DATA column for physical file deletion
-        try {
-            val projection = arrayOf(MediaStore.MediaColumns.DATA)
-            context.contentResolver.query(targetUri, projection, null, null, null)?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val dataIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
-                    if (dataIdx != -1) {
-                        val path = cursor.getString(dataIdx)
-                        if (!path.isNullOrBlank()) {
-                            val file = File(path)
-                            if (file.exists() && file.delete()) {
-                                return InternalDeleteOutcome(isDeleted = true)
-                            }
-                        }
-                    }
+        // 6. Try deleting standard MediaStore URI with contentResolver
+        if (targetUri != uri) {
+            try {
+                val count = context.contentResolver.delete(targetUri, null, null)
+                if (count > 0) {
+                    return InternalDeleteOutcome(isDeleted = true)
                 }
-            }
-        } catch (_: Exception) {}
+            } catch (e: SecurityException) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && e is RecoverableSecurityException) {
+                    return InternalDeleteOutcome(
+                        isDeleted = false,
+                        intentSender = e.userAction.actionIntent.intentSender,
+                        mediaUri = targetUri
+                    )
+                }
+            } catch (_: Exception) {}
+        }
 
-        // 6. On Android 11+ (API 30+), create a system delete request if user confirmation is required
+        // 7. On Android 11+ (API 30+), create system delete request with targetUri
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && resolvedMediaUri != null) {
             try {
                 val pendingIntent = MediaStore.createDeleteRequest(context.contentResolver, listOf(resolvedMediaUri))
@@ -584,10 +665,12 @@ class VaultRepository(private val context: Context) {
                     intentSender = pendingIntent.intentSender,
                     mediaUri = resolvedMediaUri
                 )
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
 
-        // 7. Try fallback deletion across collections by display name
+        // 8. Try fallback deletion across collections by display name
         if (!fileName.isNullOrBlank()) {
             val collections = listOf(
                 MediaStore.Images.Media.EXTERNAL_CONTENT_URI,

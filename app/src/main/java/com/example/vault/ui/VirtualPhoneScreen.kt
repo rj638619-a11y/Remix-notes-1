@@ -11,6 +11,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.Circle
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PowerSettingsNew
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Wifi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
@@ -61,6 +64,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.util.VibrationHelper
 import com.example.vault.data.VaultRepository
 import com.example.vault.data.VaultSecurityManager
+import com.example.vault.util.PanicSensorManager
 import com.example.vault.ui.apps.VaultAudioPlayerApp
 import com.example.vault.ui.apps.VaultBrowserApp
 import com.example.vault.ui.apps.VaultClockApp
@@ -71,6 +75,7 @@ import com.example.vault.ui.apps.VaultSettingsApp
 import com.example.vault.ui.apps.VaultVideoPlayerApp
 import com.example.vault.ui.lock.SetPinDialog
 import com.example.vault.ui.lock.VaultLockScreen
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -101,6 +106,39 @@ fun VirtualPhoneScreen(
             if (toastMessage == msg) {
                 toastMessage = null
             }
+        }
+    }
+
+    fun triggerPanic() {
+        if (securityManager.isPanicVibrateEnabled()) {
+            VibrationHelper.doubleClick(context)
+        }
+        if (securityManager.hasPin()) {
+            isLocked = true
+            securityManager.lock()
+        }
+        activeApp = null
+        onExitVault()
+    }
+
+    // Accelerometer-based Smart Panic Triggers (Flip Face-Down & Double-Shake)
+    val panicSensorManager = remember {
+        PanicSensorManager(
+            context = context,
+            isFlipEnabled = { securityManager.isPanicFlipEnabled() },
+            isShakeEnabled = { securityManager.isPanicShakeEnabled() },
+            onPanicTriggered = {
+                coroutineScope.launch(Dispatchers.Main) {
+                    triggerPanic()
+                }
+            }
+        )
+    }
+
+    DisposableEffect(Unit) {
+        panicSensorManager.start()
+        onDispose {
+            panicSensorManager.stop()
         }
     }
 
@@ -150,12 +188,21 @@ fun VirtualPhoneScreen(
             .fillMaxSize()
             .background(Color(0xFF000000))
     ) {
-        // Virtual Phone Status Bar
+        // Virtual Phone Status Bar (Double-tap anywhere on status bar to trigger Panic Mode)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(34.dp)
                 .background(Color.Black)
+                .pointerInput(Unit) {
+                    detectTapGestures(
+                        onDoubleTap = {
+                            if (securityManager.isPanicDoubleTapEnabled()) {
+                                triggerPanic()
+                            }
+                        }
+                    )
+                }
                 .padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
@@ -195,25 +242,54 @@ fun VirtualPhoneScreen(
                         ) {
                             Box(
                                 modifier = Modifier
-                                    .size(8.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF020617))
-                                    .border(0.5.dp, Color(0xFF1E293B), CircleShape)
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF020617))
+                                .border(0.5.dp, Color(0xFF1E293B), CircleShape)
                             )
                             Box(
                                 modifier = Modifier
-                                    .size(5.dp)
-                                    .clip(CircleShape)
-                                    .background(Color(0xFF10B981))
+                                .size(5.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF10B981))
                             )
                         }
                     }
 
-                    // Right Status: Wi-Fi, Battery, Lock button
+                    // Right Status: Panic button, Wi-Fi, Battery, Lock button
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
+                        // Emergency Panic Trigger Button
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFDC2626))
+                                .clickable {
+                                    triggerPanic()
+                                }
+                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Shield,
+                                    contentDescription = "Instant Panic Switch",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Text(
+                                    text = "PANIC",
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+
                         Icon(
                             imageVector = Icons.Default.Wifi,
                             contentDescription = null,
@@ -352,10 +428,45 @@ fun VirtualPhoneScreen(
                                         onTriggerSetPin = {
                                             showSetPinDialog = true
                                         },
+                                        onPanicExit = ::triggerPanic,
                                         showToast = ::showToast,
                                         modifier = Modifier.fillMaxSize()
                                     )
                                 }
+                            }
+                        }
+                    }
+
+                    // Floating Emergency Panic Button (When inside any vault app)
+                    if (!isLocked && activeApp != null && securityManager.isPanicFloatingButtonEnabled()) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(bottom = 60.dp, end = 16.dp)
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(Color(0xFFDC2626).copy(alpha = 0.92f))
+                                .border(1.dp, Color.White.copy(alpha = 0.4f), RoundedCornerShape(20.dp))
+                                .clickable {
+                                    triggerPanic()
+                                }
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Shield,
+                                    contentDescription = "Emergency Panic Switch",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Text(
+                                    text = "PANIC",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Black,
+                                    color = Color.White
+                                )
                             }
                         }
                     }
