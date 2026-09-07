@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "HTML Notes"
+rootProject.name = "NOTES"
 
 include(":app")

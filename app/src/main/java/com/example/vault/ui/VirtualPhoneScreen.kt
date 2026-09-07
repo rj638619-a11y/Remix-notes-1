@@ -320,6 +320,7 @@ fun VirtualPhoneScreen(
                                 }
                                 "browser" -> {
                                     VaultBrowserApp(
+                                        repository = repository,
                                         onBack = { activeApp = null },
                                         showToast = ::showToast,
                                         modifier = Modifier.fillMaxSize()

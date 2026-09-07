@@ -11,6 +11,9 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import android.util.Base64
+import android.webkit.MimeTypeMap
+import android.webkit.URLUtil
 import com.example.util.ImageCompressor
 import com.example.vault.model.VaultItem
 import com.example.vault.model.VaultItemType
@@ -24,6 +27,9 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLConnection
 import java.util.UUID
 
 data class MoveResult(
@@ -175,6 +181,183 @@ class VaultRepository(private val context: Context) {
             saveMetadata()
         }
         Pair(count, bytesSaved)
+    }
+
+    /**
+     * Downloads an internet URL or data URI directly into the isolated Vault sandbox.
+     * The file is stored ONLY in private app files and never touches the main device's
+     * public Downloads or MediaStore folders.
+     */
+    suspend fun downloadUrlToVault(
+        url: String,
+        suggestedFileName: String? = null,
+        mimeTypeOverride: String? = null,
+        onProgress: ((Float) -> Unit)? = null
+    ): VaultItem? = withContext(Dispatchers.IO) {
+        try {
+            if (url.startsWith("data:", ignoreCase = true)) {
+                val commaIndex = url.indexOf(',')
+                if (commaIndex == -1) return@withContext null
+                val header = url.substring(0, commaIndex)
+                val base64Data = url.substring(commaIndex + 1)
+                val mime = header.substringAfter("data:").substringBefore(";").trim().ifEmpty { "image/png" }
+                val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(mime) ?: "png"
+                val rawBytes = Base64.decode(base64Data, Base64.DEFAULT)
+
+                val itemType = if (mime.startsWith("image/")) VaultItemType.PHOTO
+                else if (mime.startsWith("video/")) VaultItemType.VIDEO
+                else if (mime.startsWith("audio/")) VaultItemType.AUDIO
+                else VaultItemType.DOCUMENT
+
+                val targetDir = when (itemType) {
+                    VaultItemType.PHOTO -> photosDir
+                    VaultItemType.VIDEO -> videosDir
+                    VaultItemType.AUDIO -> audioDir
+                    else -> docsDir
+                }
+
+                val cleanName = (suggestedFileName?.trim()?.ifEmpty { null } ?: "vault_dl_${System.currentTimeMillis()}").let {
+                    if (!it.contains(".")) "$it.$ext" else it
+                }
+                val safeName = cleanName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+                val uniqueFileName = "${UUID.randomUUID().toString().take(8)}_$safeName"
+                val targetFile = File(targetDir, uniqueFileName)
+                targetFile.writeBytes(rawBytes)
+
+                if (itemType == VaultItemType.PHOTO) {
+                    val thumbFile = File(thumbnailsDir, "$uniqueFileName.thumb")
+                    ImageCompressor.createThumbnail(targetFile, thumbFile, size = 360, quality = 75)
+                }
+
+                val vaultItem = VaultItem(
+                    id = UUID.randomUUID().toString(),
+                    name = cleanName,
+                    relativePath = targetFile.relativeTo(vaultRoot).path,
+                    type = itemType,
+                    mimeType = mime,
+                    sizeBytes = targetFile.length(),
+                    dateAdded = System.currentTimeMillis()
+                )
+
+                _itemsFlow.value = listOf(vaultItem) + _itemsFlow.value
+                saveMetadata()
+                return@withContext vaultItem
+            }
+
+            var currentUrl = url
+            var connection: HttpURLConnection? = null
+            var redirects = 0
+            val maxRedirects = 6
+
+            while (redirects < maxRedirects) {
+                val u = URL(currentUrl)
+                connection = (u.openConnection() as HttpURLConnection).apply {
+                    instanceFollowRedirects = false
+                    connectTimeout = 15000
+                    readTimeout = 30000
+                    setRequestProperty(
+                        "User-Agent",
+                        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+                    )
+                    setRequestProperty("Accept", "*/*")
+                }
+                val status = connection.responseCode
+                if (status in 300..399) {
+                    val location = connection.getHeaderField("Location") ?: break
+                    currentUrl = if (location.startsWith("http://") || location.startsWith("https://")) {
+                        location
+                    } else {
+                        URL(u, location).toString()
+                    }
+                    redirects++
+                } else {
+                    break
+                }
+            }
+
+            val conn = connection ?: return@withContext null
+            if (conn.responseCode !in 200..299) {
+                return@withContext null
+            }
+
+            val rawContentType = conn.contentType ?: ""
+            val cleanMime = (mimeTypeOverride ?: rawContentType.substringBefore(";").trim()).ifEmpty {
+                URLConnection.guessContentTypeFromName(currentUrl) ?: "application/octet-stream"
+            }
+            val contentDisposition = conn.getHeaderField("Content-Disposition")
+
+            var resolvedName: String = if (!suggestedFileName.isNullOrBlank()) {
+                suggestedFileName.trim()
+            } else {
+                URLUtil.guessFileName(currentUrl, contentDisposition, cleanMime)
+            }
+            if (resolvedName.isBlank() || resolvedName == "downloadfile.bin") {
+                val pathEnd = currentUrl.substringBefore("?").substringAfterLast("/")
+                if (pathEnd.isNotBlank()) resolvedName = pathEnd
+            }
+            resolvedName = resolvedName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
+            if (!resolvedName.contains(".")) {
+                val ext = MimeTypeMap.getSingleton().getExtensionFromMimeType(cleanMime) ?: "bin"
+                resolvedName = "$resolvedName.$ext"
+            }
+
+            val ext = resolvedName.substringAfterLast('.', "").lowercase()
+            val itemType = when {
+                cleanMime.startsWith("image/") || ext in listOf("jpg", "jpeg", "png", "gif", "webp", "heic", "bmp", "svg") -> VaultItemType.PHOTO
+                cleanMime.startsWith("video/") || ext in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "flv", "ts") -> VaultItemType.VIDEO
+                cleanMime.startsWith("audio/") || ext in listOf("mp3", "m4a", "wav", "aac", "flac", "ogg", "opus", "wma") -> VaultItemType.AUDIO
+                else -> VaultItemType.DOCUMENT
+            }
+
+            val targetDir = when (itemType) {
+                VaultItemType.PHOTO -> photosDir
+                VaultItemType.VIDEO -> videosDir
+                VaultItemType.AUDIO -> audioDir
+                else -> docsDir
+            }
+
+            val uniqueFileName = "${UUID.randomUUID().toString().take(8)}_$resolvedName"
+            val targetFile = File(targetDir, uniqueFileName)
+
+            val contentLength = conn.contentLengthLong
+            var bytesReadTotal = 0L
+
+            conn.inputStream.use { input ->
+                FileOutputStream(targetFile).use { output ->
+                    val buffer = ByteArray(32 * 1024)
+                    var bytes: Int
+                    while (input.read(buffer).also { bytes = it } != -1) {
+                        output.write(buffer, 0, bytes)
+                        bytesReadTotal += bytes
+                        if (contentLength > 0 && onProgress != null) {
+                            onProgress(bytesReadTotal.toFloat() / contentLength)
+                        }
+                    }
+                }
+            }
+
+            if (itemType == VaultItemType.PHOTO && targetFile.length() > 0) {
+                val thumbFile = File(thumbnailsDir, "$uniqueFileName.thumb")
+                ImageCompressor.createThumbnail(targetFile, thumbFile, size = 360, quality = 75)
+            }
+
+            val vaultItem = VaultItem(
+                id = UUID.randomUUID().toString(),
+                name = resolvedName,
+                relativePath = targetFile.relativeTo(vaultRoot).path,
+                type = itemType,
+                mimeType = cleanMime,
+                sizeBytes = targetFile.length(),
+                dateAdded = System.currentTimeMillis()
+            )
+
+            _itemsFlow.value = listOf(vaultItem) + _itemsFlow.value
+            saveMetadata()
+            vaultItem
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
     }
 
     suspend fun moveFileToVault(uri: Uri, forcedType: VaultItemType? = null): MoveResult = withContext(Dispatchers.IO) {
