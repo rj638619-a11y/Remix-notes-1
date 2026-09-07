@@ -342,8 +342,13 @@ fun VirtualPhoneScreen(
                         AnimatedContent(
                             targetState = activeApp,
                             transitionSpec = {
-                                fadeIn(animationSpec = tween(90)) togetherWith
-                                        fadeOut(animationSpec = tween(90))
+                                if (targetState != null) {
+                                    slideInHorizontally { width -> width } + fadeIn() togetherWith
+                                            slideOutHorizontally { width -> -width } + fadeOut()
+                                } else {
+                                    slideInHorizontally { width -> -width } + fadeIn() togetherWith
+                                            slideOutHorizontally { width -> width } + fadeOut()
+                                }
                             },
                             label = "phone_screen_nav"
                         ) { targetApp ->

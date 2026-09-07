@@ -432,28 +432,28 @@ fun HomeScreen(
         // Ambient background glowing gradients
         AmbientBackground(isDark = colors.isDark, isReduced = colors.isReduced)
 
-        val isReducedMotion = colors.isReduced
-
         val homeScale by animateFloatAsState(
-            targetValue = if (isHomePushed && !isReducedMotion) 0.96f else 1f,
-            animationSpec = tween(durationMillis = 150),
+            targetValue = if (isHomePushed) 0.94f else 1f,
+            animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow),
             label = "homeScale"
         )
         val homeAlpha by animateFloatAsState(
-            targetValue = if (isHomePushed && !isReducedMotion) 0.8f else 1f,
-            animationSpec = tween(durationMillis = 150),
+            targetValue = if (isHomePushed) 0.7f else 1f,
+            animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow),
             label = "homeAlpha"
         )
 
-        // Home View with lightweight scaling
+        // Home View with push scaling animation when editor opens
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .graphicsLayer {
-                    if (isHomePushed && !isReducedMotion) {
-                        scaleX = homeScale
-                        scaleY = homeScale
-                        alpha = homeAlpha
+                    scaleX = homeScale
+                    scaleY = homeScale
+                    alpha = homeAlpha
+                    if (isHomePushed) {
+                        shape = RoundedCornerShape(26.dp)
+                        clip = true
                     }
                 }
         ) {
@@ -768,13 +768,19 @@ fun HomeScreen(
         // Slide-in Note Editor Screen
         AnimatedVisibility(
             visible = activeEditingNote != null,
-            enter = fadeIn(animationSpec = tween(120)) + slideInHorizontally(
-                initialOffsetX = { it / 6 },
-                animationSpec = tween(140)
+            enter = slideInHorizontally(
+                initialOffsetX = { it },
+                animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow)
+            ) + fadeIn(animationSpec = tween(280)) + scaleIn(
+                initialScale = 0.94f,
+                animationSpec = spring(dampingRatio = 0.85f, stiffness = Spring.StiffnessMediumLow)
             ),
-            exit = fadeOut(animationSpec = tween(100)) + slideOutHorizontally(
-                targetOffsetX = { it / 6 },
-                animationSpec = tween(120)
+            exit = slideOutHorizontally(
+                targetOffsetX = { it },
+                animationSpec = spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMedium)
+            ) + fadeOut(animationSpec = tween(220)) + scaleOut(
+                targetScale = 0.94f,
+                animationSpec = spring(dampingRatio = 0.9f, stiffness = Spring.StiffnessMedium)
             )
         ) {
             if (activeEditingNote != null) {
@@ -1082,8 +1088,8 @@ fun HomeScreen(
         // Secret Vault Virtual Mobile Screen Overlay
         AnimatedVisibility(
             visible = isVaultOpen,
-            enter = fadeIn(tween(110)) + slideInVertically(tween(140)) { it / 8 },
-            exit = fadeOut(tween(90)) + slideOutVertically(tween(120)) { it / 8 }
+            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut()
         ) {
             VirtualPhoneScreen(
                 onExitVault = { isVaultOpen = false },
