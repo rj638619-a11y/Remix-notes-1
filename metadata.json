@@ -1,0 +1,8 @@
+{
+  "name": "Remix Glass Notes 1",
+  "description": "A sleek glassmorphism note app with an isolated Secret Vault virtual mobile phone, private media player, secure gallery, browser, notes, and file protection.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
