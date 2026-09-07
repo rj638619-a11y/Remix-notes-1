@@ -34,12 +34,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PhotoLibrary
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -68,6 +70,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.example.util.ImageCompressor
 import com.example.vault.data.VaultRepository
 import com.example.vault.model.VaultItem
 import com.example.vault.model.VaultItemType
@@ -92,6 +95,7 @@ fun VaultGalleryApp(
     var selectedPhoto by remember { mutableStateOf<VaultItem?>(null) }
     var photoToDelete by remember { mutableStateOf<VaultItem?>(null) }
     var photoInfoToShow by remember { mutableStateOf<VaultItem?>(null) }
+    var isOptimizing by remember { mutableStateOf(false) }
 
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
@@ -148,6 +152,38 @@ fun VaultGalleryApp(
                     color = Color.White,
                     modifier = Modifier.weight(1f)
                 )
+                if (photos.isNotEmpty()) {
+                    IconButton(
+                        onClick = {
+                            if (!isOptimizing) {
+                                isOptimizing = true
+                                coroutineScope.launch {
+                                    val (count, saved) = repository.optimizeVaultImages()
+                                    isOptimizing = false
+                                    if (count > 0) {
+                                        showToast("Compressed $count photos! Saved ${ImageCompressor.formatFileSize(saved)}")
+                                    } else {
+                                        showToast("All photos are already optimally compressed")
+                                    }
+                                }
+                            }
+                        }
+                    ) {
+                        if (isOptimizing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                color = Color(0xFF38BDF8),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Compress,
+                                contentDescription = "Compress & Optimize Storage",
+                                tint = Color(0xFF38BDF8)
+                            )
+                        }
+                    }
+                }
                 Text(
                     text = "${photos.size} items",
                     fontSize = 13.sp,
@@ -206,8 +242,8 @@ fun VaultGalleryApp(
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    items(photos, key = { it.id }) { item ->
-                        val file = repository.getFileForItem(item)
+                    items(photos, key = { it.id }, contentType = { "photo" }) { item ->
+                        val thumbFile = repository.getThumbnailForItem(item)
                         Box(
                             modifier = Modifier
                                 .aspectRatio(1f)
@@ -217,8 +253,10 @@ fun VaultGalleryApp(
                         ) {
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
-                                    .data(file)
-                                    .crossfade(true)
+                                    .data(thumbFile)
+                                    .size(360, 360)
+                                    .allowHardware(true)
+                                    .crossfade(150)
                                     .build(),
                                 contentDescription = item.name,
                                 contentScale = ContentScale.Crop,
@@ -429,9 +467,10 @@ fun VaultGalleryApp(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Name: ${info.name}", fontSize = 13.sp)
-                    Text("Size: ${repository.getStats().formatBytes(info.sizeBytes)}", fontSize = 13.sp)
+                    Text("Size: ${ImageCompressor.formatFileSize(info.sizeBytes)}", fontSize = 13.sp)
                     Text("Date: ${dateFormat.format(Date(info.dateAdded))}", fontSize = 13.sp)
                     Text("Status: Isolated in Secret Vault", fontSize = 13.sp, color = Color(0xFF34D399))
+                    Text("Optimization: Smart Compressed (Fast & Lightweight)", fontSize = 12.sp, color = Color(0xFF38BDF8))
                 }
             },
             confirmButton = {

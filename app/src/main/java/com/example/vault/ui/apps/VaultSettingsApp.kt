@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.FileDownload
@@ -34,6 +35,7 @@ import androidx.compose.material.icons.filled.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
@@ -57,6 +59,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.util.ImageCompressor
 import com.example.vault.data.VaultRepository
 import com.example.vault.data.VaultSecurityManager
 import kotlinx.coroutines.launch
@@ -81,6 +84,7 @@ fun VaultSettingsApp(
     var showQuestionDialog by remember { mutableStateOf(false) }
     var showExportConfirm by remember { mutableStateOf(false) }
     var showWipeConfirm by remember { mutableStateOf(false) }
+    var isCompressing by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -366,6 +370,41 @@ fun VaultSettingsApp(
                     }
 
                     Spacer(modifier = Modifier.height(4.dp))
+
+                    // Compress & Optimize Photos button
+                    Button(
+                        onClick = {
+                            if (!isCompressing) {
+                                isCompressing = true
+                                coroutineScope.launch {
+                                    val (count, saved) = repository.optimizeVaultImages()
+                                    isCompressing = false
+                                    if (count > 0) {
+                                        showToast("Compressed $count photos! Saved ${ImageCompressor.formatFileSize(saved)}")
+                                    } else {
+                                        showToast("Vault storage is already fully compressed and optimized")
+                                    }
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0D9488)),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (isCompressing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = Color.White,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Compressing Photos...", fontWeight = FontWeight.Bold)
+                        } else {
+                            Icon(Icons.Default.Compress, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Compress & Optimize Photos", fontWeight = FontWeight.Bold)
+                        }
+                    }
 
                     // Restore All button
                     Button(

@@ -8,6 +8,7 @@ import android.os.Environment
 import android.provider.DocumentsContract
 import android.provider.MediaStore
 import android.provider.OpenableColumns
+import com.example.util.ImageCompressor
 import com.example.vault.model.VaultItem
 import com.example.vault.model.VaultItemType
 import com.example.vault.model.VaultStorageStats
@@ -37,6 +38,7 @@ class VaultRepository(private val context: Context) {
     private val audioDir: File = File(vaultRoot, "audio").apply { mkdirs() }
     private val docsDir: File = File(vaultRoot, "documents").apply { mkdirs() }
     private val notesDir: File = File(vaultRoot, "notes").apply { mkdirs() }
+    private val thumbnailsDir: File = File(vaultRoot, "thumbnails").apply { mkdirs() }
 
     private val _itemsFlow = MutableStateFlow<List<VaultItem>>(emptyList())
     val itemsFlow: StateFlow<List<VaultItem>> = _itemsFlow.asStateFlow()
@@ -109,6 +111,61 @@ class VaultRepository(private val context: Context) {
         return File(vaultRoot, item.relativePath)
     }
 
+    fun getThumbnailForItem(item: VaultItem): File {
+        val fileName = File(item.relativePath).name
+        val thumb = File(thumbnailsDir, "$fileName.thumb")
+        if (thumb.exists() && thumb.length() > 0) {
+            return thumb
+        }
+        val orig = getFileForItem(item)
+        if (item.type == VaultItemType.PHOTO && orig.exists()) {
+            try {
+                ImageCompressor.createThumbnail(orig, thumb, size = 360, quality = 75)
+                if (thumb.exists() && thumb.length() > 0) return thumb
+            } catch (_: Exception) {}
+        }
+        return orig
+    }
+
+    suspend fun optimizeVaultImages(): Pair<Int, Long> = withContext(Dispatchers.IO) {
+        var count = 0
+        var bytesSaved = 0L
+        val currentItems = _itemsFlow.value.toMutableList()
+
+        currentItems.forEachIndexed { index, item ->
+            if (item.type == VaultItemType.PHOTO) {
+                val file = getFileForItem(item)
+                if (file.exists() && file.length() > 500 * 1024) { // Only compress if > 500KB
+                    val originalSize = file.length()
+                    val tempOut = File(file.parentFile, "${file.name}.opt")
+                    val success = ImageCompressor.compressFile(file, tempOut, maxDimension = 1920, quality = 82)
+                    if (success && tempOut.exists() && tempOut.length() < originalSize) {
+                        val newSize = tempOut.length()
+                        val diff = originalSize - newSize
+                        file.delete()
+                        tempOut.renameTo(file)
+
+                        // Recreate thumbnail
+                        val thumb = File(thumbnailsDir, "${file.name}.thumb")
+                        ImageCompressor.createThumbnail(file, thumb, size = 360, quality = 75)
+
+                        currentItems[index] = item.copy(sizeBytes = newSize)
+                        count++
+                        bytesSaved += diff
+                    } else {
+                        tempOut.delete()
+                    }
+                }
+            }
+        }
+
+        if (count > 0) {
+            _itemsFlow.value = currentItems
+            saveMetadata()
+        }
+        Pair(count, bytesSaved)
+    }
+
     suspend fun moveFileToVault(uri: Uri, forcedType: VaultItemType? = null): MoveResult = withContext(Dispatchers.IO) {
         try {
             var fileName = "imported_${System.currentTimeMillis()}"
@@ -161,11 +218,35 @@ class VaultRepository(private val context: Context) {
             val sanitizedName = fileName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
             val targetFile = File(targetDir, "${UUID.randomUUID()}_$sanitizedName")
 
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(targetFile).use { output ->
-                    input.copyTo(output)
+            if (type == VaultItemType.PHOTO) {
+                // Compress image to crisp 1080p/2K resolution (~300-600KB instead of 15-30MB raw)
+                val compressed = ImageCompressor.compressUri(
+                    context = context,
+                    uri = uri,
+                    outputFile = targetFile,
+                    maxDimension = 1920,
+                    quality = 82
+                )
+                if (!compressed) {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        FileOutputStream(targetFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    } ?: return@withContext MoveResult(null, false, "Could not open file input stream")
                 }
-            } ?: return@withContext MoveResult(null, false, "Could not open file input stream")
+
+                // Generate lightweight 360px thumbnail for lag-free gallery rendering
+                try {
+                    val thumbFile = File(thumbnailsDir, "${targetFile.name}.thumb")
+                    ImageCompressor.createThumbnail(targetFile, thumbFile, size = 360, quality = 75)
+                } catch (_: Exception) {}
+            } else {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(targetFile).use { output ->
+                        input.copyTo(output)
+                    }
+                } ?: return@withContext MoveResult(null, false, "Could not open file input stream")
+            }
 
             val sizeBytes = targetFile.length()
             val relativePath = targetFile.relativeTo(vaultRoot).path
@@ -330,6 +411,10 @@ class VaultRepository(private val context: Context) {
             if (file.exists()) {
                 file.delete()
             }
+            val thumb = File(thumbnailsDir, "${file.name}.thumb")
+            if (thumb.exists()) {
+                thumb.delete()
+            }
         }
         val current = _itemsFlow.value.toMutableList()
         current.removeAll { it.id == item.id }
@@ -406,6 +491,7 @@ class VaultRepository(private val context: Context) {
         audioDir.mkdirs()
         docsDir.mkdirs()
         notesDir.mkdirs()
+        thumbnailsDir.mkdirs()
         _itemsFlow.value = emptyList()
         saveMetadata()
     }
