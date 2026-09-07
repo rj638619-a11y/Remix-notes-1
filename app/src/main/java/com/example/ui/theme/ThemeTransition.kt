@@ -79,11 +79,11 @@ class ThemeTransitionState {
         animationJob?.cancel()
         animationJob = scope.launch {
             val anim = Animatable(0f)
-            // Telegram circular reveal curve: fast explosion out, gentle deceleration to edge
+            // Snappy circular reveal: fast explosion out, instant crisp reveal
             anim.animateTo(
                 targetValue = 1f,
                 animationSpec = tween(
-                    durationMillis = 400,
+                    durationMillis = 200,
                     easing = CubicBezierEasing(0.0f, 0.0f, 0.2f, 1.0f)
                 )
             ) {

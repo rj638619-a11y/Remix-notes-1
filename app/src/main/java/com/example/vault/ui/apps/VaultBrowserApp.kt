@@ -284,14 +284,52 @@ fun VaultBrowserApp(
         webView?.loadUrl(finalUrl)
     }
 
-    // Isolated In-Vault Downloader
+    // Isolated In-Vault Downloader with cookies, userAgent, referer and blob support
     fun downloadToVault(url: String, suggestedName: String? = null, mimeOverride: String? = null) {
+        val trimmed = url.trim()
+        if (trimmed.isEmpty()) return
+
+        if (trimmed.startsWith("blob:", ignoreCase = true)) {
+            showToast("Extracting blob media...")
+            val js = """
+                (function() {
+                    try {
+                        fetch('$trimmed')
+                            .then(function(res) { return res.blob(); })
+                            .then(function(blob) {
+                                var reader = new FileReader();
+                                reader.onloadend = function() {
+                                    if (window.VaultAndroid && reader.result) {
+                                        window.VaultAndroid.saveBlobData(reader.result, '${suggestedName ?: "media_download"}');
+                                    }
+                                };
+                                reader.readAsDataURL(blob);
+                            })
+                            .catch(function(err) {
+                                console.error('Blob fetch error', err);
+                            });
+                    } catch (e) {
+                        console.error(e);
+                    }
+                })()
+            """.trimIndent()
+            webView?.evaluateJavascript(js, null)
+            return
+        }
+
         coroutineScope.launch {
             showToast("Downloading to Vault...")
+            val ua = webView?.settings?.userAgentString
+            val cookies = try { CookieManager.getInstance().getCookie(trimmed) } catch (_: Exception) { null }
+            val ref = currentUrl.ifBlank { null }
+
             val item = repository.downloadUrlToVault(
-                url = url,
+                url = trimmed,
                 suggestedFileName = suggestedName,
-                mimeTypeOverride = mimeOverride
+                mimeTypeOverride = mimeOverride,
+                userAgent = ua,
+                cookies = cookies,
+                referer = ref
             )
             if (item != null) {
                 val folderName = when (item.type) {
@@ -307,32 +345,89 @@ fun VaultBrowserApp(
         }
     }
 
-    // Sniff videos and photos currently on the web page
+    // Sniff all videos, photos, audio and downloadable media currently on the web page
     fun scanPageMedia() {
         val wv = webView ?: return
         isScanningMedia = true
-        detectedMedia.clear()
 
         val js = """
             (function() {
                 var list = [];
+                var seen = {};
+
+                function add(type, u, n) {
+                    if (!u || typeof u !== 'string') return;
+                    u = u.trim();
+                    if (!u || u.indexOf('javascript:') === 0 || u.indexOf('about:') === 0) return;
+                    if (seen[u]) return;
+                    seen[u] = true;
+                    list.push({ type: type, url: u, name: (n || (type + '_' + list.length)).substring(0, 50) });
+                }
+
+                // 1. OpenGraph & Twitter Meta Tags
+                var metas = document.getElementsByTagName('meta');
+                for (var i = 0; i < metas.length; i++) {
+                    var prop = metas[i].getAttribute('property') || metas[i].getAttribute('name') || '';
+                    var content = metas[i].getAttribute('content') || '';
+                    if (!content) continue;
+                    if (prop.indexOf('og:video') !== -1 || prop.indexOf('twitter:player:stream') !== -1) {
+                        add('video', content, 'Page Video');
+                    } else if (prop.indexOf('og:image') !== -1 || prop.indexOf('twitter:image') !== -1) {
+                        add('photo', content, 'Page Cover Image');
+                    }
+                }
+
+                // 2. Video elements & sources
                 var vids = document.getElementsByTagName('video');
                 for (var i = 0; i < vids.length; i++) {
-                    var s = vids[i].currentSrc || vids[i].src;
-                    if (s) list.push({type: 'video', url: s, name: 'Video_' + (i+1)});
-                    var sources = vids[i].getElementsByTagName('source');
+                    var v = vids[i];
+                    var s = v.currentSrc || v.src;
+                    if (s) add('video', s, 'Video_' + (i + 1));
+                    if (v.poster) add('photo', v.poster, 'Poster_' + (i + 1));
+                    var sources = v.getElementsByTagName('source');
                     for (var j = 0; j < sources.length; j++) {
-                        if (sources[j].src) list.push({type: 'video', url: sources[j].src, name: 'Video_' + (i+1) + '_' + (j+1)});
+                        if (sources[j].src) add('video', sources[j].src, 'Video_' + (i + 1) + '_' + (j + 1));
                     }
                 }
+
+                // 3. Audio elements & sources
+                var auds = document.getElementsByTagName('audio');
+                for (var i = 0; i < auds.length; i++) {
+                    var a = auds[i];
+                    var asrc = a.currentSrc || a.src;
+                    if (asrc) add('audio', asrc, 'Audio_' + (i + 1));
+                    var asources = a.getElementsByTagName('source');
+                    for (var j = 0; j < asources.length; j++) {
+                        if (asources[j].src) add('audio', asources[j].src, 'Audio_' + (i + 1) + '_' + (j + 1));
+                    }
+                }
+
+                // 4. Image elements (with src, srcset, lazy loading attributes)
                 var imgs = document.getElementsByTagName('img');
-                for (var i = 0; i < Math.min(imgs.length, 40); i++) {
-                    var isrc = imgs[i].currentSrc || imgs[i].src;
-                    if (isrc && (isrc.startsWith('http') || isrc.startsWith('data:'))) {
-                        var alt = imgs[i].alt || ('Image_' + (i+1));
-                        list.push({type: 'photo', url: isrc, name: alt.trim().slice(0, 30)});
+                for (var i = 0; i < Math.min(imgs.length, 60); i++) {
+                    var img = imgs[i];
+                    var isrc = img.currentSrc || img.src || img.getAttribute('data-src') || img.getAttribute('data-original') || img.getAttribute('data-lazy-src');
+                    if (isrc && !isrc.startsWith('data:image/svg')) {
+                        var alt = img.alt || img.title || ('Image_' + (i + 1));
+                        add('photo', isrc, alt.trim());
                     }
                 }
+
+                // 5. Direct links to media
+                var links = document.getElementsByTagName('a');
+                for (var i = 0; i < Math.min(links.length, 100); i++) {
+                    var href = links[i].href || '';
+                    if (!href) continue;
+                    var clean = href.split('?')[0].toLowerCase();
+                    if (clean.endsWith('.mp4') || clean.endsWith('.webm') || clean.endsWith('.mkv') || clean.endsWith('.mov') || clean.endsWith('.m4v') || clean.endsWith('.ts')) {
+                        add('video', href, links[i].innerText.trim() || ('Video_Link_' + (i + 1)));
+                    } else if (clean.endsWith('.jpg') || clean.endsWith('.jpeg') || clean.endsWith('.png') || clean.endsWith('.webp') || clean.endsWith('.gif') || clean.endsWith('.heic') || clean.endsWith('.avif')) {
+                        add('photo', href, links[i].innerText.trim() || ('Photo_Link_' + (i + 1)));
+                    } else if (clean.endsWith('.mp3') || clean.endsWith('.m4a') || clean.endsWith('.wav') || clean.endsWith('.aac') || clean.endsWith('.flac') || clean.endsWith('.ogg')) {
+                        add('audio', href, links[i].innerText.trim() || ('Audio_Link_' + (i + 1)));
+                    }
+                }
+
                 return JSON.stringify(list);
             })()
         """.trimIndent()
@@ -353,7 +448,7 @@ fun VaultBrowserApp(
                                 SniffedMedia(
                                     type = obj.optString("type", "photo"),
                                     url = mUrl,
-                                    name = obj.optString("name", "media_${i + 1}")
+                                    name = obj.optString("name", "media_${i + 1}").ifBlank { "media_${i + 1}" }
                                 )
                             )
                         }
@@ -837,6 +932,18 @@ fun VaultBrowserApp(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
                         WebView(ctx).apply {
+                            setLayerType(View.LAYER_TYPE_HARDWARE, null)
+                            isVerticalScrollBarEnabled = true
+                            isHorizontalScrollBarEnabled = false
+                            isScrollbarFadingEnabled = true
+
+                            // Fast Cookie Management
+                            try {
+                                val cm = CookieManager.getInstance()
+                                cm.setAcceptCookie(true)
+                                cm.setAcceptThirdPartyCookies(this, true)
+                            } catch (_: Exception) {}
+
                             settings.apply {
                                 javaScriptEnabled = true
                                 domStorageEnabled = true
@@ -851,7 +958,34 @@ fun VaultBrowserApp(
                                 allowFileAccess = true
                                 allowContentAccess = true
                                 mediaPlaybackRequiresUserGesture = false
+                                layoutAlgorithm = WebSettings.LayoutAlgorithm.NORMAL
+                                loadsImagesAutomatically = true
+                                blockNetworkImage = false
+                                setNeedInitialFocus(false)
                             }
+
+                            // JavaScript Interface for direct blob / canvas / stream downloads
+                            addJavascriptInterface(object {
+                                @android.webkit.JavascriptInterface
+                                fun saveBlobData(dataUri: String, name: String) {
+                                    if (dataUri.isNotBlank()) {
+                                        coroutineScope.launch {
+                                            val item = repository.downloadUrlToVault(
+                                                url = dataUri,
+                                                suggestedFileName = name.ifBlank { "blob_media" }
+                                            )
+                                            withContext(Dispatchers.Main) {
+                                                if (item != null) {
+                                                    val folder = if (item.type == VaultItemType.PHOTO) "Vault Gallery" else "Vault Videos"
+                                                    showToast("Saved to $folder: ${item.name}")
+                                                } else {
+                                                    showToast("Failed to save media.")
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }, "VaultAndroid")
 
                             // Isolated Vault In-Browser Downloader
                             setDownloadListener { url, userAgent, contentDisposition, mimetype, _ ->
@@ -880,12 +1014,33 @@ fun VaultBrowserApp(
                             }
 
                             webViewClient = object : WebViewClient() {
-                                // Ad Blocker Engine
+                                // Ad Blocker Engine + Real-Time Media Stream Sniffer
                                 override fun shouldInterceptRequest(
                                     view: WebView?,
                                     request: WebResourceRequest?
                                 ): WebResourceResponse? {
                                     val reqUrl = request?.url?.toString() ?: return null
+
+                                    // Real-time media sniffing for streaming videos / images
+                                    val lowerUrl = reqUrl.lowercase()
+                                    if (lowerUrl.contains(".mp4") || lowerUrl.contains(".webm") || lowerUrl.contains(".m4v") || lowerUrl.contains(".m3u8")) {
+                                        if (detectedMedia.none { it.url == reqUrl }) {
+                                            view?.post {
+                                                if (detectedMedia.none { it.url == reqUrl }) {
+                                                    detectedMedia.add(SniffedMedia(type = "video", url = reqUrl, name = "Stream_${detectedMedia.size + 1}"))
+                                                }
+                                            }
+                                        }
+                                    } else if (lowerUrl.endsWith(".jpg") || lowerUrl.endsWith(".jpeg") || lowerUrl.endsWith(".png") || lowerUrl.endsWith(".webp") || lowerUrl.endsWith(".gif")) {
+                                        if (!lowerUrl.contains("favicon") && !lowerUrl.contains("pixel") && !lowerUrl.contains("tracker") && detectedMedia.none { it.url == reqUrl }) {
+                                            view?.post {
+                                                if (detectedMedia.none { it.url == reqUrl }) {
+                                                    detectedMedia.add(SniffedMedia(type = "photo", url = reqUrl, name = "Image_${detectedMedia.size + 1}"))
+                                                }
+                                            }
+                                        }
+                                    }
+
                                     if (adBlockerEnabled && isAdRequest(reqUrl)) {
                                         blockedAdsCount++
                                         return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
@@ -1401,10 +1556,25 @@ fun VaultBrowserApp(
                             fontSize = 15.sp
                         )
 
-                        TextButton(onClick = { scanPageMedia() }) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Rescan", color = Color(0xFF38BDF8), fontSize = 12.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (detectedMedia.isNotEmpty()) {
+                                TextButton(onClick = {
+                                    showToast("Downloading all ${detectedMedia.size} items to Vault...")
+                                    detectedMedia.forEach { m ->
+                                        downloadToVault(m.url, m.name)
+                                    }
+                                    showMediaDetectorSheet = false
+                                }) {
+                                    Icon(Icons.Default.Download, contentDescription = null, tint = Color(0xFF34D399), modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text("Download All", color = Color(0xFF34D399), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                            TextButton(onClick = { scanPageMedia() }) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Rescan", color = Color(0xFF38BDF8), fontSize = 12.sp)
+                            }
                         }
                     }
 
@@ -1435,6 +1605,7 @@ fun VaultBrowserApp(
                         ) {
                             items(detectedMedia) { media ->
                                 val isVideo = media.type == "video"
+                                val isAudio = media.type == "audio"
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
@@ -1453,13 +1624,27 @@ fun VaultBrowserApp(
                                             modifier = Modifier
                                                 .size(36.dp)
                                                 .clip(RoundedCornerShape(8.dp))
-                                                .background(if (isVideo) Color(0xFFEF4444).copy(alpha = 0.2f) else Color(0xFF0284C7).copy(alpha = 0.2f)),
+                                                .background(
+                                                    when {
+                                                        isVideo -> Color(0xFFEF4444).copy(alpha = 0.2f)
+                                                        isAudio -> Color(0xFFA855F7).copy(alpha = 0.2f)
+                                                        else -> Color(0xFF0284C7).copy(alpha = 0.2f)
+                                                    }
+                                                ),
                                             contentAlignment = Alignment.Center
                                         ) {
                                             Icon(
-                                                imageVector = if (isVideo) Icons.Default.Movie else Icons.Default.Image,
+                                                imageVector = when {
+                                                    isVideo -> Icons.Default.Movie
+                                                    isAudio -> Icons.Default.VideoLibrary
+                                                    else -> Icons.Default.Image
+                                                },
                                                 contentDescription = null,
-                                                tint = if (isVideo) Color(0xFFF87171) else Color(0xFF38BDF8),
+                                                tint = when {
+                                                    isVideo -> Color(0xFFF87171)
+                                                    isAudio -> Color(0xFFC084FC)
+                                                    else -> Color(0xFF38BDF8)
+                                                },
                                                 modifier = Modifier.size(20.dp)
                                             )
                                         }
@@ -1474,7 +1659,11 @@ fun VaultBrowserApp(
                                                 overflow = TextOverflow.Ellipsis
                                             )
                                             Text(
-                                                text = if (isVideo) "Video File" else "Photo / Graphic",
+                                                text = when {
+                                                    isVideo -> "Video File"
+                                                    isAudio -> "Audio Stream"
+                                                    else -> "Photo / Graphic"
+                                                },
                                                 color = Color(0xFF94A3B8),
                                                 fontSize = 10.sp
                                             )

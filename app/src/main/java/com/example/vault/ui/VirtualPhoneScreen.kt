@@ -3,6 +3,7 @@ package com.example.vault.ui
 import android.widget.Toast
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -341,13 +342,8 @@ fun VirtualPhoneScreen(
                         AnimatedContent(
                             targetState = activeApp,
                             transitionSpec = {
-                                if (targetState != null) {
-                                    slideInHorizontally { width -> width } + fadeIn() togetherWith
-                                            slideOutHorizontally { width -> -width } + fadeOut()
-                                } else {
-                                    slideInHorizontally { width -> -width } + fadeIn() togetherWith
-                                            slideOutHorizontally { width -> width } + fadeOut()
-                                }
+                                fadeIn(animationSpec = tween(90)) togetherWith
+                                        fadeOut(animationSpec = tween(90))
                             },
                             label = "phone_screen_nav"
                         ) { targetApp ->

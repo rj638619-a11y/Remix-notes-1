@@ -185,6 +185,8 @@ class VaultRepository(private val context: Context) {
 
     /**
      * Downloads an internet URL or data URI directly into the isolated Vault sandbox.
+     * Supports passing session cookies, referer, and custom User-Agent so protected photos/videos
+     * (e.g. from social networks, CDN links, and WebViews) download reliably.
      * The file is stored ONLY in private app files and never touches the main device's
      * public Downloads or MediaStore folders.
      */
@@ -192,8 +194,12 @@ class VaultRepository(private val context: Context) {
         url: String,
         suggestedFileName: String? = null,
         mimeTypeOverride: String? = null,
+        userAgent: String? = null,
+        cookies: String? = null,
+        referer: String? = null,
         onProgress: ((Float) -> Unit)? = null
     ): VaultItem? = withContext(Dispatchers.IO) {
+        var targetFile: File? = null
         try {
             if (url.startsWith("data:", ignoreCase = true)) {
                 val commaIndex = url.indexOf(',')
@@ -221,21 +227,22 @@ class VaultRepository(private val context: Context) {
                 }
                 val safeName = cleanName.replace(Regex("[^a-zA-Z0-9._-]"), "_")
                 val uniqueFileName = "${UUID.randomUUID().toString().take(8)}_$safeName"
-                val targetFile = File(targetDir, uniqueFileName)
-                targetFile.writeBytes(rawBytes)
+                val createdFile = File(targetDir, uniqueFileName)
+                targetFile = createdFile
+                createdFile.writeBytes(rawBytes)
 
                 if (itemType == VaultItemType.PHOTO) {
                     val thumbFile = File(thumbnailsDir, "$uniqueFileName.thumb")
-                    ImageCompressor.createThumbnail(targetFile, thumbFile, size = 360, quality = 75)
+                    ImageCompressor.createThumbnail(createdFile, thumbFile, size = 360, quality = 75)
                 }
 
                 val vaultItem = VaultItem(
                     id = UUID.randomUUID().toString(),
                     name = cleanName,
-                    relativePath = targetFile.relativeTo(vaultRoot).path,
+                    relativePath = createdFile.relativeTo(vaultRoot).path,
                     type = itemType,
                     mimeType = mime,
-                    sizeBytes = targetFile.length(),
+                    sizeBytes = createdFile.length(),
                     dateAdded = System.currentTimeMillis()
                 )
 
@@ -249,17 +256,26 @@ class VaultRepository(private val context: Context) {
             var redirects = 0
             val maxRedirects = 6
 
+            val resolvedUserAgent = userAgent ?: "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
+            val resolvedCookies = cookies ?: try {
+                android.webkit.CookieManager.getInstance().getCookie(url)
+            } catch (_: Exception) { null }
+
             while (redirects < maxRedirects) {
                 val u = URL(currentUrl)
                 connection = (u.openConnection() as HttpURLConnection).apply {
                     instanceFollowRedirects = false
-                    connectTimeout = 15000
-                    readTimeout = 30000
-                    setRequestProperty(
-                        "User-Agent",
-                        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36"
-                    )
-                    setRequestProperty("Accept", "*/*")
+                    connectTimeout = 20000
+                    readTimeout = 45000
+                    setRequestProperty("User-Agent", resolvedUserAgent)
+                    setRequestProperty("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,video/*,audio/*")
+                    setRequestProperty("Accept-Language", "en-US,en;q=0.9")
+                    if (!resolvedCookies.isNullOrBlank()) {
+                        setRequestProperty("Cookie", resolvedCookies)
+                    }
+                    if (!referer.isNullOrBlank()) {
+                        setRequestProperty("Referer", referer)
+                    }
                 }
                 val status = connection.responseCode
                 if (status in 300..399) {
@@ -303,8 +319,8 @@ class VaultRepository(private val context: Context) {
 
             val ext = resolvedName.substringAfterLast('.', "").lowercase()
             val itemType = when {
-                cleanMime.startsWith("image/") || ext in listOf("jpg", "jpeg", "png", "gif", "webp", "heic", "bmp", "svg") -> VaultItemType.PHOTO
-                cleanMime.startsWith("video/") || ext in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "flv", "ts") -> VaultItemType.VIDEO
+                cleanMime.startsWith("image/") || ext in listOf("jpg", "jpeg", "png", "gif", "webp", "heic", "bmp", "svg", "avif") -> VaultItemType.PHOTO
+                cleanMime.startsWith("video/") || ext in listOf("mp4", "mkv", "mov", "webm", "avi", "3gp", "flv", "ts", "m4v") -> VaultItemType.VIDEO
                 cleanMime.startsWith("audio/") || ext in listOf("mp3", "m4a", "wav", "aac", "flac", "ogg", "opus", "wma") -> VaultItemType.AUDIO
                 else -> VaultItemType.DOCUMENT
             }
@@ -317,14 +333,15 @@ class VaultRepository(private val context: Context) {
             }
 
             val uniqueFileName = "${UUID.randomUUID().toString().take(8)}_$resolvedName"
-            val targetFile = File(targetDir, uniqueFileName)
+            val createdFile = File(targetDir, uniqueFileName)
+            targetFile = createdFile
 
             val contentLength = conn.contentLengthLong
             var bytesReadTotal = 0L
 
             conn.inputStream.use { input ->
-                FileOutputStream(targetFile).use { output ->
-                    val buffer = ByteArray(32 * 1024)
+                FileOutputStream(createdFile).use { output ->
+                    val buffer = ByteArray(64 * 1024)
                     var bytes: Int
                     while (input.read(buffer).also { bytes = it } != -1) {
                         output.write(buffer, 0, bytes)
@@ -336,18 +353,23 @@ class VaultRepository(private val context: Context) {
                 }
             }
 
-            if (itemType == VaultItemType.PHOTO && targetFile.length() > 0) {
+            if (createdFile.length() == 0L) {
+                createdFile.delete()
+                return@withContext null
+            }
+
+            if (itemType == VaultItemType.PHOTO) {
                 val thumbFile = File(thumbnailsDir, "$uniqueFileName.thumb")
-                ImageCompressor.createThumbnail(targetFile, thumbFile, size = 360, quality = 75)
+                ImageCompressor.createThumbnail(createdFile, thumbFile, size = 360, quality = 75)
             }
 
             val vaultItem = VaultItem(
                 id = UUID.randomUUID().toString(),
                 name = resolvedName,
-                relativePath = targetFile.relativeTo(vaultRoot).path,
+                relativePath = createdFile.relativeTo(vaultRoot).path,
                 type = itemType,
                 mimeType = cleanMime,
-                sizeBytes = targetFile.length(),
+                sizeBytes = createdFile.length(),
                 dateAdded = System.currentTimeMillis()
             )
 
@@ -356,6 +378,7 @@ class VaultRepository(private val context: Context) {
             vaultItem
         } catch (e: Exception) {
             e.printStackTrace()
+            targetFile?.let { if (it.exists()) it.delete() }
             null
         }
     }
