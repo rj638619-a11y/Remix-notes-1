@@ -1,11 +1,14 @@
 package com.example.vault.ui.apps
 
+import android.app.Activity
 import android.content.Intent
+import android.content.IntentSender
 import android.media.MediaPlayer
 import android.media.MediaRecorder
 import android.net.Uri
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
@@ -201,6 +204,14 @@ fun VaultAudioPlayerApp(
         return String.format(Locale.US, "%02d:%02d", m, s)
     }
 
+    val deleteConfirmLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            showToast("Original audio files deleted from device storage")
+        }
+    }
+
     val audioPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
     ) { uris: List<Uri> ->
@@ -208,16 +219,48 @@ fun VaultAudioPlayerApp(
             coroutineScope.launch {
                 var count = 0
                 var hidden = 0
+                val pendingMediaUris = mutableListOf<Uri>()
+                var singleSender: IntentSender? = null
+
                 for (uri in uris) {
                     val res = repository.moveFileToVault(uri, VaultItemType.AUDIO)
                     if (res.item != null) {
                         count++
-                        if (res.wasHiddenFromMainDevice) hidden++
+                        if (res.wasHiddenFromMainDevice) {
+                            hidden++
+                        } else {
+                            if (res.sourceMediaUri != null) {
+                                pendingMediaUris.add(res.sourceMediaUri)
+                            }
+                            if (res.pendingDeleteSender != null) {
+                                singleSender = res.pendingDeleteSender
+                            }
+                        }
                     }
                 }
+
                 if (count > 0) {
                     if (hidden == count) {
-                        showToast("$count audio file${if (count > 1) "s" else ""} moved & hidden from device")
+                        showToast("$count audio file${if (count > 1) "s" else ""} moved & deleted from device")
+                    } else if (pendingMediaUris.isNotEmpty()) {
+                        val batchSender = repository.createBatchDeleteSender(pendingMediaUris) ?: singleSender
+                        if (batchSender != null) {
+                            try {
+                                deleteConfirmLauncher.launch(IntentSenderRequest.Builder(batchSender).build())
+                                showToast("$count audio file${if (count > 1) "s" else ""} secured in vault")
+                            } catch (_: Exception) {
+                                showToast("$count audio file${if (count > 1) "s" else ""} secured in vault")
+                            }
+                        } else {
+                            showToast("$count audio file${if (count > 1) "s" else ""} secured in vault")
+                        }
+                    } else if (singleSender != null) {
+                        try {
+                            deleteConfirmLauncher.launch(IntentSenderRequest.Builder(singleSender).build())
+                            showToast("$count audio file${if (count > 1) "s" else ""} secured in vault")
+                        } catch (_: Exception) {
+                            showToast("$count audio file${if (count > 1) "s" else ""} secured in vault")
+                        }
                     } else {
                         showToast("$count audio file${if (count > 1) "s" else ""} secured in vault")
                     }

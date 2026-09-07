@@ -11,16 +11,40 @@ import androidx.fragment.app.FragmentActivity
 
 object VaultFaceBiometricHelper {
 
+    enum class BiometricStatus {
+        AVAILABLE,
+        NOT_ENROLLED,
+        NO_HARDWARE,
+        HARDWARE_UNAVAILABLE,
+        UNAVAILABLE
+    }
+
+    enum class BiometricHardwareType {
+        FACE,
+        FINGERPRINT,
+        BIOMETRIC,
+        NONE
+    }
+
     /**
-     * Checks if the device has face biometric hardware support
+     * Detects specific biometric hardware present on device
      */
-    fun hasFaceHardware(context: Context): Boolean {
+    fun getHardwareType(context: Context): BiometricHardwareType {
         val pm = context.packageManager
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val hasFace = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             pm.hasSystemFeature(PackageManager.FEATURE_FACE) ||
                     pm.hasSystemFeature("android.hardware.biometrics.face")
         } else {
             pm.hasSystemFeature("android.hardware.biometrics.face")
+        }
+
+        val hasFingerprint = pm.hasSystemFeature(PackageManager.FEATURE_FINGERPRINT)
+
+        return when {
+            hasFace && !hasFingerprint -> BiometricHardwareType.FACE
+            hasFingerprint && !hasFace -> BiometricHardwareType.FINGERPRINT
+            hasFace && hasFingerprint -> BiometricHardwareType.BIOMETRIC
+            else -> BiometricHardwareType.NONE
         }
     }
 
@@ -28,15 +52,19 @@ object VaultFaceBiometricHelper {
      * Checks if biometric authentication can be performed
      */
     fun canAuthenticate(context: Context): BiometricStatus {
-        val biometricManager = BiometricManager.from(context)
-        return when (biometricManager.canAuthenticate(
-            BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK
-        )) {
-            BiometricManager.BIOMETRIC_SUCCESS -> BiometricStatus.AVAILABLE
-            BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> BiometricStatus.NOT_ENROLLED
-            BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE -> BiometricStatus.NO_HARDWARE
-            BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE -> BiometricStatus.HARDWARE_UNAVAILABLE
-            else -> BiometricStatus.UNAVAILABLE
+        return try {
+            val biometricManager = BiometricManager.from(context)
+            when (biometricManager.canAuthenticate(
+                BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK
+            )) {
+                BiometricManager.BIOMETRIC_SUCCESS -> BiometricStatus.AVAILABLE
+                BiometricManager.BIOMETRIC_ERROR_NONE_ENROLLED -> BiometricStatus.NOT_ENROLLED
+                BiometricManager.BIOMETRIC_ERROR_NO_HARDWARE -> BiometricStatus.NO_HARDWARE
+                BiometricManager.BIOMETRIC_ERROR_HW_UNAVAILABLE -> BiometricStatus.HARDWARE_UNAVAILABLE
+                else -> BiometricStatus.UNAVAILABLE
+            }
+        } catch (_: Exception) {
+            BiometricStatus.UNAVAILABLE
         }
     }
 
@@ -55,21 +83,39 @@ object VaultFaceBiometricHelper {
     }
 
     /**
-     * Prompts for Face Unlock Biometric authentication
+     * Prompts for Biometric (Face / Fingerprint) authentication
      */
-    fun authenticateFace(
+    fun authenticateBiometric(
         activity: FragmentActivity,
         onSuccess: () -> Unit,
         onError: (errorCode: Int, errString: CharSequence) -> Unit,
         onFailed: () -> Unit = {}
     ) {
+        val status = canAuthenticate(activity)
+        if (status != BiometricStatus.AVAILABLE) {
+            val msg = when (status) {
+                BiometricStatus.NOT_ENROLLED -> "No biometric enrolled on this device"
+                BiometricStatus.NO_HARDWARE -> "Biometric hardware is not available on this device"
+                BiometricStatus.HARDWARE_UNAVAILABLE -> "Biometric hardware is temporarily unavailable"
+                else -> "Biometric authentication is not supported on this device"
+            }
+            onError(BiometricPrompt.ERROR_HW_UNAVAILABLE, msg)
+            return
+        }
+
         val executor = ContextCompat.getMainExecutor(activity)
+        val hwType = getHardwareType(activity)
+        val titleText = when (hwType) {
+            BiometricHardwareType.FACE -> "Face Unlock"
+            BiometricHardwareType.FINGERPRINT -> "Fingerprint Unlock"
+            else -> "Biometric Unlock"
+        }
 
         val promptInfo = BiometricPrompt.PromptInfo.Builder()
-            .setTitle("Face Unlock")
-            .setSubtitle("Authenticate your face to open Secret Vault")
-            .setDescription("Look at the camera for instant face verification.")
-            .setNegativeButtonText("Use Vault PIN")
+            .setTitle(titleText)
+            .setSubtitle("Authenticate to access Secret Vault")
+            .setDescription("Confirm your biometric identity to unlock.")
+            .setNegativeButtonText("Use PIN")
             .setAllowedAuthenticators(
                 BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK
             )
@@ -96,14 +142,18 @@ object VaultFaceBiometricHelper {
             }
         )
 
-        biometricPrompt.authenticate(promptInfo)
+        try {
+            biometricPrompt.authenticate(promptInfo)
+        } catch (e: Exception) {
+            onError(BiometricPrompt.ERROR_UNABLE_TO_PROCESS, e.message ?: "Authentication failed")
+        }
     }
 
-    enum class BiometricStatus {
-        AVAILABLE,
-        NOT_ENROLLED,
-        NO_HARDWARE,
-        HARDWARE_UNAVAILABLE,
-        UNAVAILABLE
-    }
+    // Retain backwards-compatible alias
+    fun authenticateFace(
+        activity: FragmentActivity,
+        onSuccess: () -> Unit,
+        onError: (errorCode: Int, errString: CharSequence) -> Unit,
+        onFailed: () -> Unit = {}
+    ) = authenticateBiometric(activity, onSuccess, onError, onFailed)
 }

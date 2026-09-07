@@ -1,7 +1,10 @@
 package com.example.vault.data
 
+import android.app.RecoverableSecurityException
+import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
+import android.content.IntentSender
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -26,7 +29,15 @@ import java.util.UUID
 data class MoveResult(
     val item: VaultItem?,
     val wasHiddenFromMainDevice: Boolean,
+    val pendingDeleteSender: IntentSender? = null,
+    val sourceMediaUri: Uri? = null,
     val errorMessage: String? = null
+)
+
+private data class InternalDeleteOutcome(
+    val isDeleted: Boolean,
+    val intentSender: IntentSender? = null,
+    val mediaUri: Uri? = null
 )
 
 class VaultRepository(private val context: Context) {
@@ -232,7 +243,7 @@ class VaultRepository(private val context: Context) {
                         FileOutputStream(targetFile).use { output ->
                             input.copyTo(output)
                         }
-                    } ?: return@withContext MoveResult(null, false, "Could not open file input stream")
+                    } ?: return@withContext MoveResult(null, false, errorMessage = "Could not open file input stream")
                 }
 
                 // Generate lightweight 360px thumbnail for lag-free gallery rendering
@@ -245,7 +256,7 @@ class VaultRepository(private val context: Context) {
                     FileOutputStream(targetFile).use { output ->
                         input.copyTo(output)
                     }
-                } ?: return@withContext MoveResult(null, false, "Could not open file input stream")
+                } ?: return@withContext MoveResult(null, false, errorMessage = "Could not open file input stream")
             }
 
             val sizeBytes = targetFile.length()
@@ -262,92 +273,160 @@ class VaultRepository(private val context: Context) {
             )
 
             // Attempt to automatically delete the source file from main device to hide it
-            val wasHidden = tryDeleteSource(uri, fileName)
+            val deleteOutcome = tryDeleteSourceDetailed(uri, fileName, sizeBytes)
+            val wasHidden = deleteOutcome.isDeleted
 
             val current = _itemsFlow.value.toMutableList()
             current.add(0, newItem)
             _itemsFlow.value = current
             saveMetadata()
 
-            MoveResult(newItem, wasHidden)
+            MoveResult(
+                item = newItem,
+                wasHiddenFromMainDevice = wasHidden,
+                pendingDeleteSender = deleteOutcome.intentSender,
+                sourceMediaUri = deleteOutcome.mediaUri
+            )
         } catch (e: Exception) {
-            MoveResult(null, false, e.message ?: "Failed to move file to vault")
+            MoveResult(null, false, errorMessage = e.message ?: "Failed to move file to vault")
         }
     }
 
-    private fun tryDeleteSource(uri: Uri, fileName: String?): Boolean {
-        var deleted = false
-        // 1. Try DocumentsContract if applicable
+    /**
+     * Creates a batch delete prompt IntentSender for multiple MediaStore items (Android 11+)
+     */
+    fun createBatchDeleteSender(mediaUris: List<Uri>): IntentSender? {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && mediaUris.isNotEmpty()) {
+            try {
+                val validUris = mediaUris.filter { it.authority?.contains("media") == true }.distinct()
+                if (validUris.isNotEmpty()) {
+                    return MediaStore.createDeleteRequest(context.contentResolver, validUris).intentSender
+                }
+            } catch (_: Exception) {}
+        }
+        return null
+    }
+
+    private fun tryDeleteSourceDetailed(uri: Uri, fileName: String?, sourceSizeBytes: Long): InternalDeleteOutcome {
+        // 1. Try DocumentsContract if it is a SAF Document URI
         try {
             if (DocumentsContract.isDocumentUri(context, uri)) {
-                deleted = DocumentsContract.deleteDocument(context.contentResolver, uri)
+                if (DocumentsContract.deleteDocument(context.contentResolver, uri)) {
+                    return InternalDeleteOutcome(isDeleted = true)
+                }
             }
         } catch (_: Exception) {}
 
-        // 2. Try direct contentResolver delete
-        if (!deleted) {
-            try {
-                deleted = context.contentResolver.delete(uri, null, null) > 0
-            } catch (_: Exception) {}
-        }
-
-        // 3. Try deleting via direct file scheme
-        if (!deleted && uri.scheme == "file") {
+        // 2. Try direct file scheme
+        if (uri.scheme == "file") {
             try {
                 val f = File(uri.path ?: "")
-                if (f.exists()) {
-                    deleted = f.delete()
+                if (f.exists() && f.delete()) {
+                    return InternalDeleteOutcome(isDeleted = true)
                 }
             } catch (_: Exception) {}
         }
 
-        // 4. Try querying MediaStore _data column
-        if (!deleted) {
-            try {
-                val projection = arrayOf(MediaStore.MediaColumns.DATA, MediaStore.MediaColumns._ID)
-                context.contentResolver.query(uri, projection, null, null, null)?.use { cursor ->
-                    if (cursor.moveToFirst()) {
-                        val dataIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
-                        if (dataIdx != -1) {
-                            val path = cursor.getString(dataIdx)
-                            if (!path.isNullOrBlank()) {
-                                val file = File(path)
-                                if (file.exists()) {
-                                    deleted = file.delete()
-                                }
+        // 3. Resolve actual MediaStore URI if possible
+        var resolvedMediaUri: Uri? = null
+        if (uri.authority?.contains("media") == true && !uri.toString().contains("picker")) {
+            resolvedMediaUri = uri
+        } else if (!fileName.isNullOrBlank()) {
+            val collections = listOf(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                MediaStore.Files.getContentUri("external")
+            )
+            for (collection in collections) {
+                try {
+                    val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.SIZE)
+                    val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ?"
+                    val selectionArgs = arrayOf(fileName)
+                    context.contentResolver.query(collection, projection, selection, selectionArgs, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) {
+                            val idIdx = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                            val id = cursor.getLong(idIdx)
+                            resolvedMediaUri = ContentUris.withAppendedId(collection, id)
+                        }
+                    }
+                    if (resolvedMediaUri != null) break
+                } catch (_: Exception) {}
+            }
+        }
+
+        val targetUri = resolvedMediaUri ?: uri
+
+        // 4. Try direct contentResolver delete
+        try {
+            val count = context.contentResolver.delete(targetUri, null, null)
+            if (count > 0) {
+                return InternalDeleteOutcome(isDeleted = true)
+            }
+        } catch (e: SecurityException) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && e is RecoverableSecurityException) {
+                return InternalDeleteOutcome(
+                    isDeleted = false,
+                    intentSender = e.userAction.actionIntent.intentSender,
+                    mediaUri = targetUri
+                )
+            }
+        } catch (_: Exception) {}
+
+        // 5. Try querying MediaStore DATA column for physical file deletion
+        try {
+            val projection = arrayOf(MediaStore.MediaColumns.DATA)
+            context.contentResolver.query(targetUri, projection, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val dataIdx = cursor.getColumnIndex(MediaStore.MediaColumns.DATA)
+                    if (dataIdx != -1) {
+                        val path = cursor.getString(dataIdx)
+                        if (!path.isNullOrBlank()) {
+                            val file = File(path)
+                            if (file.exists() && file.delete()) {
+                                return InternalDeleteOutcome(isDeleted = true)
                             }
                         }
                     }
                 }
-            } catch (_: Exception) {}
-        }
+            }
+        } catch (_: Exception) {}
 
-        // 5. Try querying external storage collections by filename
-        if (!deleted && !fileName.isNullOrBlank()) {
+        // 6. On Android 11+ (API 30+), create a system delete request if user confirmation is required
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && resolvedMediaUri != null) {
             try {
-                val collections = listOf(
-                    MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
-                    MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
-                    MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                    MediaStore.Files.getContentUri("external")
+                val pendingIntent = MediaStore.createDeleteRequest(context.contentResolver, listOf(resolvedMediaUri))
+                return InternalDeleteOutcome(
+                    isDeleted = false,
+                    intentSender = pendingIntent.intentSender,
+                    mediaUri = resolvedMediaUri
                 )
-                for (collection in collections) {
-                    try {
-                        val deletedRows = context.contentResolver.delete(
-                            collection,
-                            "${MediaStore.MediaColumns.DISPLAY_NAME} = ?",
-                            arrayOf(fileName)
-                        )
-                        if (deletedRows > 0) {
-                            deleted = true
-                            break
-                        }
-                    } catch (_: Exception) {}
-                }
             } catch (_: Exception) {}
         }
 
-        return deleted
+        // 7. Try fallback deletion across collections by display name
+        if (!fileName.isNullOrBlank()) {
+            val collections = listOf(
+                MediaStore.Images.Media.EXTERNAL_CONTENT_URI,
+                MediaStore.Video.Media.EXTERNAL_CONTENT_URI,
+                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+                MediaStore.Files.getContentUri("external")
+            )
+            for (collection in collections) {
+                try {
+                    val deletedRows = context.contentResolver.delete(
+                        collection,
+                        "${MediaStore.MediaColumns.DISPLAY_NAME} = ?",
+                        arrayOf(fileName)
+                    )
+                    if (deletedRows > 0) {
+                        return InternalDeleteOutcome(isDeleted = true)
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
+        return InternalDeleteOutcome(isDeleted = false, mediaUri = resolvedMediaUri)
     }
 
     suspend fun saveSecretNote(title: String, content: String, existingId: String? = null): VaultItem = withContext(Dispatchers.IO) {

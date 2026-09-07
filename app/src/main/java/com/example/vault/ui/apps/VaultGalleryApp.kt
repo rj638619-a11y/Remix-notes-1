@@ -1,9 +1,12 @@
 package com.example.vault.ui.apps
 
+import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.IntentSender
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -97,6 +100,14 @@ fun VaultGalleryApp(
     var photoInfoToShow by remember { mutableStateOf<VaultItem?>(null) }
     var isOptimizing by remember { mutableStateOf(false) }
 
+    val deleteConfirmLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            showToast("Original photos deleted from device storage")
+        }
+    }
+
     val photoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris: List<Uri> ->
@@ -104,16 +115,46 @@ fun VaultGalleryApp(
             coroutineScope.launch {
                 var movedCount = 0
                 var hiddenCount = 0
+                val pendingMediaUris = mutableListOf<Uri>()
+                var singleSender: IntentSender? = null
+
                 for (uri in uris) {
                     val res = repository.moveFileToVault(uri, VaultItemType.PHOTO)
                     if (res.item != null) {
                         movedCount++
-                        if (res.wasHiddenFromMainDevice) hiddenCount++
+                        if (res.wasHiddenFromMainDevice) {
+                            hiddenCount++
+                        } else {
+                            if (res.sourceMediaUri != null) {
+                                pendingMediaUris.add(res.sourceMediaUri)
+                            }
+                            if (res.pendingDeleteSender != null) {
+                                singleSender = res.pendingDeleteSender
+                            }
+                        }
                     }
                 }
+
                 if (movedCount > 0) {
                     if (hiddenCount == movedCount) {
-                        showToast("$movedCount photo${if (movedCount > 1) "s" else ""} moved & hidden from device")
+                        showToast("$movedCount photo${if (movedCount > 1) "s" else ""} moved & deleted from device")
+                    } else if (pendingMediaUris.isNotEmpty()) {
+                        val batchSender = repository.createBatchDeleteSender(pendingMediaUris) ?: singleSender
+                        if (batchSender != null) {
+                            try {
+                                deleteConfirmLauncher.launch(IntentSenderRequest.Builder(batchSender).build())
+                            } catch (_: Exception) {
+                                showToast("$movedCount photo${if (movedCount > 1) "s" else ""} secured in vault")
+                            }
+                        } else {
+                            showToast("$movedCount photo${if (movedCount > 1) "s" else ""} secured in vault")
+                        }
+                    } else if (singleSender != null) {
+                        try {
+                            deleteConfirmLauncher.launch(IntentSenderRequest.Builder(singleSender).build())
+                        } catch (_: Exception) {
+                            showToast("$movedCount photo${if (movedCount > 1) "s" else ""} secured in vault")
+                        }
                     } else {
                         showToast("$movedCount photo${if (movedCount > 1) "s" else ""} secured in vault")
                     }

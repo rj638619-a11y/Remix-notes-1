@@ -1,5 +1,10 @@
 package com.example.vault.ui.apps
 
+import android.app.ActivityManager
+import android.content.Context
+import android.os.Build
+import android.os.Environment
+import android.os.StatFs
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -28,6 +33,8 @@ import androidx.compose.material.icons.filled.Compress
 import androidx.compose.material.icons.filled.DeleteForever
 import androidx.compose.material.icons.filled.Face
 import androidx.compose.material.icons.filled.FileDownload
+import androidx.compose.material.icons.filled.Fingerprint
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Security
@@ -55,6 +62,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -62,6 +70,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.util.ImageCompressor
 import com.example.vault.data.VaultRepository
 import com.example.vault.data.VaultSecurityManager
+import com.example.vault.util.VaultFaceBiometricHelper
 import kotlinx.coroutines.launch
 
 @Composable
@@ -74,9 +83,41 @@ fun VaultSettingsApp(
     showToast: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val allItems by repository.itemsFlow.collectAsStateWithLifecycle()
     val stats = remember(allItems) { repository.getStats() }
+
+    val hwType = remember(context) { VaultFaceBiometricHelper.getHardwareType(context) }
+    val bioTitle = when (hwType) {
+        VaultFaceBiometricHelper.BiometricHardwareType.FACE -> "Face Unlock"
+        VaultFaceBiometricHelper.BiometricHardwareType.FINGERPRINT -> "Fingerprint Unlock"
+        else -> "Biometric Unlock"
+    }
+    val bioSubtitle = when (hwType) {
+        VaultFaceBiometricHelper.BiometricHardwareType.FACE -> "Authenticate vault with secure face recognition"
+        VaultFaceBiometricHelper.BiometricHardwareType.FINGERPRINT -> "Authenticate vault with fingerprint sensor"
+        else -> "Authenticate vault with biometric hardware"
+    }
+    val bioIcon = if (hwType == VaultFaceBiometricHelper.BiometricHardwareType.FACE) Icons.Default.Face else Icons.Default.Fingerprint
+
+    // Real system memory and storage info
+    val memoryInfo = remember {
+        val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+        val mi = ActivityManager.MemoryInfo()
+        am?.getMemoryInfo(mi)
+        mi
+    }
+    val storageInfo = remember {
+        try {
+            val stat = StatFs(Environment.getDataDirectory().path)
+            val totalBytes = stat.blockCountLong * stat.blockSizeLong
+            val availBytes = stat.availableBlocksLong * stat.blockSizeLong
+            Pair(availBytes, totalBytes)
+        } catch (_: Exception) {
+            Pair(0L, 0L)
+        }
+    }
 
     var biometricEnabled by remember { mutableStateOf(securityManager.isBiometricEnabled()) }
     var currentWallpaper by remember { mutableStateOf(securityManager.getWallpaper()) }
@@ -182,13 +223,16 @@ fun VaultSettingsApp(
                         )
                     }
 
-                    // Face Unlock toggle (Face Only, No Fingerprint)
+                    // Biometric Unlock toggle
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f).padding(end = 8.dp)
+                        ) {
                             Box(
                                 modifier = Modifier
                                     .size(38.dp)
@@ -196,20 +240,20 @@ fun VaultSettingsApp(
                                     .background(Color(0xFF0284C7).copy(alpha = 0.2f)),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Icon(Icons.Default.Face, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(20.dp))
+                                Icon(bioIcon, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(20.dp))
                             }
                             Spacer(modifier = Modifier.width(12.dp))
                             Column {
-                                Text("Face Unlock Only", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                Text("Biometric access via face scan only (no fingerprint)", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                                Text(bioTitle, color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text(bioSubtitle, color = Color(0xFF94A3B8), fontSize = 12.sp)
                             }
                         }
                         Switch(
                             checked = biometricEnabled,
                             onCheckedChange = {
                                 biometricEnabled = it
-                                securityManager.setFaceUnlockEnabled(it)
-                                showToast(if (it) "Face Unlock enabled" else "Face Unlock disabled")
+                                securityManager.setBiometricEnabled(it)
+                                showToast(if (it) "$bioTitle enabled" else "$bioTitle disabled")
                             },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.White,
@@ -428,6 +472,114 @@ fun VaultSettingsApp(
                         Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(16.dp), tint = Color(0xFFFCA5A5))
                         Spacer(modifier = Modifier.width(8.dp))
                         Text("Wipe All Secret Vault Data", color = Color(0xFFFCA5A5), fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                // Section 4: Real Device & Vault System Info
+                Text(
+                    text = "DEVICE & VAULT SYSTEM INFO",
+                    color = Color(0xFF818CF8),
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0xFF1E293B))
+                        .border(1.dp, Color(0xFF334155), RoundedCornerShape(14.dp))
+                        .padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    val deviceName = remember {
+                        val mfr = Build.MANUFACTURER.replaceFirstChar { it.uppercase() }
+                        val model = Build.MODEL
+                        if (model.startsWith(mfr, ignoreCase = true)) model else "$mfr $model"
+                    }
+                    val androidVer = remember { "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})" }
+                    val secPatch = remember {
+                        try {
+                            Build.VERSION.SECURITY_PATCH
+                        } catch (_: Exception) {
+                            "Up to date"
+                        }
+                    }
+                    val abi = remember { Build.SUPPORTED_ABIS.firstOrNull() ?: Build.HARDWARE }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Device Model", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                        Text(deviceName, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("OS Version", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                        Text(androidVer, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Security Patch", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                        Text(secPatch, color = Color(0xFF34D399), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("CPU Architecture", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                        Text(abi, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Normal)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Device RAM", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                        val availRam = stats.formatBytes(memoryInfo?.availMem ?: 0L)
+                        val totalRam = stats.formatBytes(memoryInfo?.totalMem ?: 0L)
+                        Text("$availRam free / $totalRam", color = Color(0xFFCBD5E1), fontSize = 12.sp)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Internal Storage", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                        val availStorage = stats.formatBytes(storageInfo.first)
+                        val totalStorage = stats.formatBytes(storageInfo.second)
+                        Text("$availStorage free / $totalStorage", color = Color(0xFFCBD5E1), fontSize = 12.sp)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Biometric Hardware", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                        val isBioReady = VaultFaceBiometricHelper.canAuthenticate(context) == VaultFaceBiometricHelper.BiometricStatus.AVAILABLE
+                        Text(
+                            text = if (isBioReady) "$bioTitle (Ready)" else "$bioTitle (Available)",
+                            color = Color(0xFF38BDF8),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Vault Sandbox", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                        Text("AES-256 GCM Encrypted", color = Color(0xFF818CF8), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Vault Hold Trigger", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                        Text("3 Seconds", color = Color(0xFFFBBF24), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
             }

@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Fingerprint
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material3.AlertDialog
@@ -79,15 +80,44 @@ fun VaultLockScreen(
 
     val shakeOffset = remember { Animatable(0f) }
 
+    val biometricStatus = remember(context) { VaultFaceBiometricHelper.canAuthenticate(context) }
+    val isBiometricAvailable = biometricStatus == VaultFaceBiometricHelper.BiometricStatus.AVAILABLE
+    val hwType = remember(context) { VaultFaceBiometricHelper.getHardwareType(context) }
+    val bioLabel = when (hwType) {
+        VaultFaceBiometricHelper.BiometricHardwareType.FACE -> "Face Unlock"
+        VaultFaceBiometricHelper.BiometricHardwareType.FINGERPRINT -> "Fingerprint Unlock"
+        else -> "Biometric Unlock"
+    }
+    val bioIcon = if (hwType == VaultFaceBiometricHelper.BiometricHardwareType.FACE) {
+        Icons.Default.Face
+    } else {
+        Icons.Default.Fingerprint
+    }
+
     val timeFormat = remember { SimpleDateFormat("HH:mm", Locale.getDefault()) }
     val dateFormat = remember { SimpleDateFormat("EEEE, MMMM d", Locale.getDefault()) }
     var currentTime by remember { mutableStateOf(timeFormat.format(Date())) }
     var currentDate by remember { mutableStateOf(dateFormat.format(Date())) }
 
-    fun triggerFaceUnlock() {
+    fun triggerBiometricUnlock(manualTap: Boolean = false) {
         if (!securityManager.isFaceUnlockEnabled()) return
+
+        val currentStatus = VaultFaceBiometricHelper.canAuthenticate(context)
+        if (currentStatus != VaultFaceBiometricHelper.BiometricStatus.AVAILABLE) {
+            if (manualTap) {
+                VibrationHelper.tick(context)
+                errorText = when (currentStatus) {
+                    VaultFaceBiometricHelper.BiometricStatus.NOT_ENROLLED -> "No biometric registered in device settings"
+                    VaultFaceBiometricHelper.BiometricStatus.NO_HARDWARE -> "Biometric sensor not available on this device"
+                    VaultFaceBiometricHelper.BiometricStatus.HARDWARE_UNAVAILABLE -> "Biometric sensor temporarily unavailable"
+                    else -> "Biometric unlock not supported on this device"
+                }
+            }
+            return
+        }
+
         val activity = fragmentActivity ?: return
-        VaultFaceBiometricHelper.authenticateFace(
+        VaultFaceBiometricHelper.authenticateBiometric(
             activity = activity,
             onSuccess = {
                 VibrationHelper.click(context)
@@ -95,13 +125,16 @@ fun VaultLockScreen(
             },
             onError = { errorCode, errString ->
                 if (errorCode != androidx.biometric.BiometricPrompt.ERROR_USER_CANCELED &&
-                    errorCode != androidx.biometric.BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
-                    errorText = errString.toString()
+                    errorCode != androidx.biometric.BiometricPrompt.ERROR_NEGATIVE_BUTTON &&
+                    errorCode != androidx.biometric.BiometricPrompt.ERROR_CANCELED) {
+                    if (manualTap) {
+                        errorText = errString.toString()
+                    }
                 }
             },
             onFailed = {
                 VibrationHelper.tick(context)
-                errorText = "Face not recognized. Use PIN."
+                errorText = "Biometric not recognized. Use PIN."
             }
         )
     }
@@ -114,11 +147,11 @@ fun VaultLockScreen(
         }
     }
 
-    // Auto-launch Face Unlock on opening lock screen if enabled
+    // Auto-launch Biometric Unlock only if hardware is available and enrolled
     LaunchedEffect(Unit) {
-        if (securityManager.isFaceUnlockEnabled()) {
-            delay(350)
-            triggerFaceUnlock()
+        if (securityManager.isFaceUnlockEnabled() && isBiometricAvailable) {
+            delay(400)
+            triggerBiometricUnlock(manualTap = false)
         }
     }
 
@@ -260,7 +293,7 @@ fun VaultLockScreen(
                     }
                 }
 
-                if (securityManager.isFaceUnlockEnabled()) {
+                if (securityManager.isFaceUnlockEnabled() && (isBiometricAvailable || biometricStatus == VaultFaceBiometricHelper.BiometricStatus.NOT_ENROLLED)) {
                     Spacer(modifier = Modifier.height(6.dp))
                     Row(
                         modifier = Modifier
@@ -268,21 +301,20 @@ fun VaultLockScreen(
                             .background(Color(0xFF1E293B))
                             .border(1.dp, Color(0xFF38BDF8).copy(alpha = 0.4f), RoundedCornerShape(20.dp))
                             .clickable {
-                                VibrationHelper.tick(context)
-                                triggerFaceUnlock()
+                                triggerBiometricUnlock(manualTap = true)
                             }
                             .padding(horizontal = 14.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Icon(
-                            imageVector = Icons.Default.Face,
-                            contentDescription = "Face Unlock",
+                            imageVector = bioIcon,
+                            contentDescription = bioLabel,
                             tint = Color(0xFF38BDF8),
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
-                            text = "Face Unlock Only",
+                            text = bioLabel,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color(0xFFBAE6FD)
@@ -334,16 +366,17 @@ fun VaultLockScreen(
                                     }
                                 }
                                 "bio" -> {
-                                    if (securityManager.isFaceUnlockEnabled()) {
+                                    if (securityManager.isFaceUnlockEnabled() &&
+                                        (isBiometricAvailable || biometricStatus == VaultFaceBiometricHelper.BiometricStatus.NOT_ENROLLED)
+                                    ) {
                                         KeypadButton(
                                             onClick = {
-                                                VibrationHelper.tick(context)
-                                                triggerFaceUnlock()
+                                                triggerBiometricUnlock(manualTap = true)
                                             }
                                         ) {
                                             Icon(
-                                                imageVector = Icons.Default.Face,
-                                                contentDescription = "Face Unlock Only",
+                                                imageVector = bioIcon,
+                                                contentDescription = bioLabel,
                                                 tint = Color(0xFF38BDF8),
                                                 modifier = Modifier.size(28.dp)
                                             )

@@ -172,7 +172,7 @@ fun ThemeToggleIconButton(
             .clip(CircleShape)
             .background(colors.field)
             .pointerInput(Unit) {
-                val requiredHoldMs = 5000L
+                val requiredHoldMs = 3000L
                 coroutineScope {
                     while (true) {
                         awaitPointerEventScope {

@@ -32,7 +32,7 @@ class GlassNotesApp : Application(), ImageLoaderFactory {
             .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(64L * 1024 * 1024)
+                    .maxSizeBytes(16L * 1024 * 1024)
                     .build()
             }
             .allowHardware(true)

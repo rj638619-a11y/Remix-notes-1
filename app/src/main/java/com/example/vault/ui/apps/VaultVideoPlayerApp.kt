@@ -1,10 +1,13 @@
 package com.example.vault.ui.apps
 
+import android.app.Activity
 import android.content.Intent
+import android.content.IntentSender
 import android.net.Uri
 import android.widget.MediaController
 import android.widget.VideoView
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -86,6 +89,14 @@ fun VaultVideoPlayerApp(
     var activeVideo by remember { mutableStateOf<VaultItem?>(null) }
     var videoToDelete by remember { mutableStateOf<VaultItem?>(null) }
 
+    val deleteConfirmLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            showToast("Original videos deleted from device storage")
+        }
+    }
+
     val videoPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.PickMultipleVisualMedia()
     ) { uris: List<Uri> ->
@@ -93,16 +104,48 @@ fun VaultVideoPlayerApp(
             coroutineScope.launch {
                 var count = 0
                 var hidden = 0
+                val pendingMediaUris = mutableListOf<Uri>()
+                var singleSender: IntentSender? = null
+
                 for (uri in uris) {
                     val res = repository.moveFileToVault(uri, VaultItemType.VIDEO)
                     if (res.item != null) {
                         count++
-                        if (res.wasHiddenFromMainDevice) hidden++
+                        if (res.wasHiddenFromMainDevice) {
+                            hidden++
+                        } else {
+                            if (res.sourceMediaUri != null) {
+                                pendingMediaUris.add(res.sourceMediaUri)
+                            }
+                            if (res.pendingDeleteSender != null) {
+                                singleSender = res.pendingDeleteSender
+                            }
+                        }
                     }
                 }
+
                 if (count > 0) {
                     if (hidden == count) {
-                        showToast("$count video${if (count > 1) "s" else ""} moved & hidden from device")
+                        showToast("$count video${if (count > 1) "s" else ""} moved & deleted from device")
+                    } else if (pendingMediaUris.isNotEmpty()) {
+                        val batchSender = repository.createBatchDeleteSender(pendingMediaUris) ?: singleSender
+                        if (batchSender != null) {
+                            try {
+                                deleteConfirmLauncher.launch(IntentSenderRequest.Builder(batchSender).build())
+                                showToast("$count video${if (count > 1) "s" else ""} secured in vault")
+                            } catch (_: Exception) {
+                                showToast("$count video${if (count > 1) "s" else ""} secured in vault")
+                            }
+                        } else {
+                            showToast("$count video${if (count > 1) "s" else ""} secured in vault")
+                        }
+                    } else if (singleSender != null) {
+                        try {
+                            deleteConfirmLauncher.launch(IntentSenderRequest.Builder(singleSender).build())
+                            showToast("$count video${if (count > 1) "s" else ""} secured in vault")
+                        } catch (_: Exception) {
+                            showToast("$count video${if (count > 1) "s" else ""} secured in vault")
+                        }
                     } else {
                         showToast("$count video${if (count > 1) "s" else ""} secured in vault")
                     }
