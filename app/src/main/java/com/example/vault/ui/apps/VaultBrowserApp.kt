@@ -932,7 +932,6 @@ fun VaultBrowserApp(
                     modifier = Modifier.fillMaxSize(),
                     factory = { ctx ->
                         WebView(ctx).apply {
-                            setLayerType(View.LAYER_TYPE_HARDWARE, null)
                             isVerticalScrollBarEnabled = true
                             isHorizontalScrollBarEnabled = false
                             isScrollbarFadingEnabled = true
