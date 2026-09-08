@@ -110,30 +110,30 @@ import kotlinx.coroutines.delay
 @Composable
 fun GeminiSearchSheet(
     initialQuery: String,
-    initialMode: GeminiSearchMode = GeminiSearchMode.ASK_NOTES,
+    initialMode: GeminiSearchMode,
     geminiState: GeminiQueryState,
     allNotes: List<NoteEntity>,
     aiHistory: List<AiHistoryItem>,
-    currentReaderMode: String = "html",
-    geminiApiKey: String = "",
-    onSetGeminiApiKey: (String) -> Unit = {},
+    currentReaderMode: String,
+    geminiApiKey: String,
+    onSetGeminiApiKey: (String) -> Unit,
     onDismiss: () -> Unit,
     onQuery: (String, GeminiSearchMode) -> Unit,
     onSaveAsNote: (GeminiResult, String) -> Unit,
     onOpenCitedNote: (String) -> Unit,
-    onDeleteHistoryItem: (String) -> Unit = {},
-    onClearHistory: () -> Unit = {},
-    chatSessions: List<ChatSession> = emptyList(),
-    activeChatSession: ChatSession? = null,
-    chatDetailedAnswers: Boolean = false,
-    chatSelectedModel: String = "gemini-3.5-flash",
-    onSetChatDetailedAnswers: (Boolean) -> Unit = {},
-    onSetChatSelectedModel: (String) -> Unit = {},
-    onSendChatPrompt: (String) -> Unit = {},
-    onStartNewChat: () -> Unit = {},
-    onSelectChatSession: (String) -> Unit = {},
-    onDeleteChatSession: (String) -> Unit = {},
-    onClearAllChats: () -> Unit = {}
+    onDeleteHistoryItem: (String) -> Unit,
+    onClearHistory: () -> Unit,
+    chatSessions: List<ChatSession>,
+    activeChatSession: ChatSession?,
+    chatDetailedAnswers: Boolean,
+    chatSelectedModel: String,
+    onSetChatDetailedAnswers: (Boolean) -> Unit,
+    onSetChatSelectedModel: (String) -> Unit,
+    onSendChatPrompt: (String) -> Unit,
+    onStartNewChat: () -> Unit,
+    onSelectChatSession: (String) -> Unit,
+    onDeleteChatSession: (String) -> Unit,
+    onClearAllChats: () -> Unit
 ) {
     val colors = GlassTheme.colors
     val context = LocalContext.current
@@ -587,7 +587,7 @@ private fun AiPromptAndResultView(
     onSubmit: (String, GeminiSearchMode) -> Unit,
     onSaveAsNote: (GeminiResult, String) -> Unit,
     onOpenCitedNote: (String) -> Unit,
-    onConfigureApiKey: () -> Unit = {},
+    onConfigureApiKey: () -> Unit,
     onCopyText: (String) -> Unit
 ) {
     val colors = GlassTheme.colors
@@ -851,55 +851,16 @@ private fun AiPromptAndResultView(
 }
 
 @Composable
-private fun PresetChip(
-    icon: ImageVector,
-    label: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    val colors = GlassTheme.colors
-    Box(
-        modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
-            .background(
-                if (isSelected) Color(0xFF3B82F6).copy(alpha = 0.18f) else colors.field
-            )
-            .border(
-                width = 1.dp,
-                color = if (isSelected) Color(0xFF3B82F6) else colors.hairline,
-                shape = RoundedCornerShape(20.dp)
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 7.dp)
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = if (isSelected) Color(0xFF3B82F6) else colors.textSecondary,
-                modifier = Modifier.size(15.dp)
-            )
-            Text(
-                text = label,
-                fontSize = 12.5.sp,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                color = if (isSelected) Color(0xFF3B82F6) else colors.text
-            )
-        }
-    }
-}
-
-@Composable
 private fun AiLoadingCard(prompt: String, glowAlpha: Float) {
     val colors = GlassTheme.colors
     var phraseIndex by remember { mutableIntStateOf(0) }
     val phrases = listOf(
-        "Scanning notes database & PDF documents...",
-        "Analyzing relationships and extracting insights...",
-        "Synthesizing structured response with Gemini..."
+        "Gemini is analyzing your request...",
+        "Consulting your personal knowledge vault...",
+        "Synthesizing references and citations...",
+        "Refining response clarity...",
+        "Applying modern glass-morphic layout...",
+        "Formatting code block styles..."
     )
 
     LaunchedEffect(Unit) {
@@ -958,7 +919,8 @@ private fun AiSuccessCard(
     onCopyText: (String) -> Unit
 ) {
     val colors = GlassTheme.colors
-    val isHtml = result.suggestedType == "html" || result.content.contains("<html", ignoreCase = true) || result.content.contains("<!DOCTYPE", ignoreCase = true)
+    val context = LocalContext.current
+    val isHtml = result.suggestedType == "html"
 
     Column(
         modifier = Modifier
@@ -1231,118 +1193,6 @@ private fun AiSuccessCard(
                 }
             }
         }
-    }
-}
-
-@Composable
-private fun AiErrorCard(
-    errorMessage: String,
-    onRetry: () -> Unit,
-    onConfigureApiKey: () -> Unit = {}
-) {
-    val colors = GlassTheme.colors
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFFEF4444).copy(alpha = 0.1f))
-            .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.3f), RoundedCornerShape(16.dp))
-            .padding(16.dp)
-    ) {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                Icon(
-                    imageVector = Icons.Default.AutoAwesome,
-                    contentDescription = null,
-                    tint = Color(0xFFEF4444),
-                    modifier = Modifier.size(18.dp)
-                )
-                Text(
-                    text = "AI Notice",
-                    fontSize = 14.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFEF4444)
-                )
-            }
-            Text(
-                text = errorMessage,
-                fontSize = 13.sp,
-                color = colors.textSecondary,
-                lineHeight = 18.sp
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFFEF4444).copy(alpha = 0.2f))
-                        .clickable(onClick = onRetry)
-                        .padding(horizontal = 12.dp, vertical = 7.dp)
-                ) {
-                    Text(
-                        text = "Retry Query",
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFEF4444)
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF3B82F6).copy(alpha = 0.2f))
-                        .clickable(onClick = onConfigureApiKey)
-                        .padding(horizontal = 12.dp, vertical = 7.dp)
-                ) {
-                    Text(
-                        text = "Connect API Key",
-                        fontSize = 12.5.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF3B82F6)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AiIdleState(currentReaderMode: String) {
-    val colors = GlassTheme.colors
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(colors.field),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Default.AutoAwesome,
-                contentDescription = null,
-                tint = colors.textTertiary,
-                modifier = Modifier.size(22.dp)
-            )
-        }
-        Text(
-            text = if (currentReaderMode == "pdf") "Search & Synthesize PDF Library" else "Smart Notes Intelligence",
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = colors.textSecondary
-        )
-        Text(
-            text = "Type any question above or tap one of the quick action presets",
-            fontSize = 13.sp,
-            color = colors.textTertiary,
-            textAlign = TextAlign.Center
-        )
     }
 }
 
@@ -2239,3 +2089,130 @@ private fun AiChatbotView(
         )
     }
 }
+
+@Composable
+private fun PresetChip(
+    icon: ImageVector,
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    val colors = GlassTheme.colors
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (isSelected) Color(0xFF3B82F6).copy(alpha = 0.15f) else colors.field)
+            .border(
+                1.dp,
+                if (isSelected) Color(0xFF3B82F6) else colors.hairline,
+                RoundedCornerShape(12.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (isSelected) Color(0xFF3B82F6) else colors.textSecondary,
+                modifier = Modifier.size(14.dp)
+            )
+            Text(
+                text = label,
+                fontSize = 12.sp,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                color = if (isSelected) Color(0xFF3B82F6) else colors.text
+            )
+        }
+    }
+}
+
+@Composable
+private fun AiErrorCard(
+    errorMessage: String,
+    onRetry: () -> Unit,
+    onConfigureApiKey: () -> Unit
+) {
+    val colors = GlassTheme.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(colors.card)
+            .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Default.Clear,
+            contentDescription = "Error",
+            tint = Color(0xFFEF4444),
+            modifier = Modifier.size(32.dp)
+        )
+        Text(
+            text = "Error Generating Response",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            color = colors.text
+        )
+        Text(
+            text = errorMessage,
+            fontSize = 13.sp,
+            color = colors.textSecondary,
+            textAlign = TextAlign.Center
+        )
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            TextButton(onClick = onRetry) {
+                Text("Retry", color = Color(0xFF3B82F6), fontWeight = FontWeight.Bold)
+            }
+            TextButton(onClick = onConfigureApiKey) {
+                Text("API Key", color = colors.textSecondary)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AiIdleState(currentReaderMode: String) {
+    val colors = GlassTheme.colors
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Default.AutoAwesome,
+            contentDescription = null,
+            tint = Color(0xFF3B82F6).copy(alpha = 0.6f),
+            modifier = Modifier.size(48.dp)
+        )
+        Text(
+            text = "Ask Gemini AI",
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = colors.text,
+            textAlign = TextAlign.Center
+        )
+        Text(
+            text = if (currentReaderMode == "pdf") {
+                "Select an action above to analyze or summarize your active PDF document."
+            } else {
+                "Ask questions, summarize contents, or generate interactive components from your notes."
+            },
+            fontSize = 13.sp,
+            color = colors.textSecondary,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 24.dp)
+        )
+    }
+}
+

@@ -1,0 +1,39 @@
+--- app/src/main/java/com/example/ui/sheets/GeminiSearchSheet.kt
++++ app/src/main/java/com/example/ui/sheets/GeminiSearchSheet.kt
+@@ -107,2 +107,35 @@
+ 
++@OptIn(ExperimentalMaterial3Api::class)
++@Composable
++fun GeminiSearchSheet(
++    initialQuery: String,
++    initialMode: GeminiSearchMode,
++    geminiState: GeminiQueryState,
++    allNotes: List<NoteEntity>,
++    aiHistory: List<AiHistoryItem>,
++    currentReaderMode: String,
++    geminiApiKey: String,
++    onSetGeminiApiKey: (String) -> Unit,
++    onDismiss: () -> Unit,
++    onQuery: (String, GeminiSearchMode) -> Unit,
++    onSaveAsNote: (GeminiResult, String) -> Unit,
++    onOpenCitedNote: (String) -> Unit,
++    onDeleteHistoryItem: (String) -> Unit,
++    onClearHistory: () -> Unit,
++    chatSessions: List<ChatSession>,
++    activeChatSession: ChatSession?,
++    chatDetailedAnswers: Boolean,
++    chatSelectedModel: String,
++    onSetChatDetailedAnswers: (Boolean) -> Unit,
++    onSetChatSelectedModel: (String) -> Unit,
++    onSendChatPrompt: (String) -> Unit,
++    onStartNewChat: () -> Unit,
++    onSelectChatSession: (String) -> Unit,
++    onDeleteChatSession: (String) -> Unit,
++    onClearAllChats: () -> Unit
++) {
++    val colors = GlassTheme.colors
++    val context = LocalContext.current
++    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
++    val clipboard = LocalClipboardManager.current
++
+ @OptIn(ExperimentalMaterial3Api::class)

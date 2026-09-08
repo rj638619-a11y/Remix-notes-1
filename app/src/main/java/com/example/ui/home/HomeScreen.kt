@@ -126,6 +126,7 @@ sealed interface ActiveSheet {
     object Sync : ActiveSheet
     object Sort : ActiveSheet
     data class GeminiSearch(val query: String = "", val mode: GeminiSearchMode = GeminiSearchMode.ASK_NOTES) : ActiveSheet
+    object AiChatbot : ActiveSheet
 }
 
 @Composable
@@ -742,6 +743,10 @@ fun HomeScreen(
                     VibrationHelper.vibrate(context, 8)
                     activeSheet = ActiveSheet.Create
                 },
+                onChatbotClick = {
+                    VibrationHelper.vibrate(context, 8)
+                    activeSheet = ActiveSheet.AiChatbot
+                },
                 onSettingsClick = {
                     VibrationHelper.vibrate(context, 8)
                     activeSheet = ActiveSheet.Settings
@@ -1015,6 +1020,31 @@ fun HomeScreen(
                 )
             }
 
+            is ActiveSheet.AiChatbot -> {
+                com.example.ui.sheets.AiChatbotSheet(
+                    chatSessions = chatSessions,
+                    activeChatSession = activeChatSession,
+                    chatDetailedAnswers = chatDetailedAnswers,
+                    chatSelectedModel = chatSelectedModel,
+                    geminiState = geminiState,
+                    geminiApiKey = settings.geminiApiKey,
+                    onSetChatDetailedAnswers = { viewModel.setChatDetailedAnswers(it) },
+                    onSetChatSelectedModel = { viewModel.setChatSelectedModel(it) },
+                    onSendChatPrompt = { viewModel.sendChatPrompt(it) },
+                    onStartNewChat = { viewModel.startNewChatSession() },
+                    onSelectChatSession = { viewModel.setActiveChatSession(it) },
+                    onDeleteChatSession = { viewModel.deleteChatSession(it) },
+                    onClearAllChats = { viewModel.clearAllChatSessions() },
+                    onSaveAsNote = { res, type ->
+                        viewModel.saveGeminiResultAsNote(res, type) { newId ->
+                            activeSheet = ActiveSheet.None
+                            editingNoteId = newId
+                        }
+                    },
+                    onSetGeminiApiKey = { viewModel.setGeminiApiKey(it) },
+                    onDismiss = { activeSheet = ActiveSheet.None }
+                )
+            }
             ActiveSheet.None -> {}
         }
 

@@ -1,0 +1,22 @@
+private fun AiChatbotView(
+    chatSessions: List<ChatSession>,
+    activeChatSession: ChatSession?,
+    chatDetailedAnswers: Boolean,
+    chatSelectedModel: String,
+    geminiState: GeminiQueryState,
+    onSetChatDetailedAnswers: (Boolean) -> Unit,
+    onSetChatSelectedModel: (String) -> Unit,
+    onSendChatPrompt: (String) -> Unit,
+    onStartNewChat: () -> Unit,
+    onSelectChatSession: (String) -> Unit,
+    onDeleteChatSession: (String) -> Unit,
+    onClearAllChats: () -> Unit,
+    onSaveAsNote: (GeminiResult, String) -> Unit,
+    isKeyConnected: Boolean,
+    onConfigureApiKey: () -> Unit
+) {
+    val colors = GlassTheme.colors
+    val context = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val listState = rememberLazyListState()
+

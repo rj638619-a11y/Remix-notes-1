@@ -1,0 +1,50 @@
+--- app/src/main/java/com/example/ui/sheets/GeminiSearchSheet.kt
++++ app/src/main/java/com/example/ui/sheets/GeminiSearchSheet.kt
+@@ -144,7 +144,7 @@
+     var showCopiedToast by remember { mutableStateOf(false) }
+-    var activeAiTab by remember { mutableStateOf("chat") } // "chat", "ask", or "history"
++    var activeAiTab by remember { mutableStateOf("ask") } // "ask", or "history"
+ 
+@@ -286,20 +286,2 @@
+                     ) {
+-                    Box(
+-                        modifier = Modifier
+-                            .clip(RoundedCornerShape(16.dp))
+-                            .background(if (activeAiTab == "chat") colors.card else Color.Transparent)
+-                            .clickable {
+-                                VibrationHelper.vibrate(context, 6)
+-                                activeAiTab = "chat"
+-                            }
+-                            .padding(horizontal = 12.dp, vertical = 6.dp),
+-                        contentAlignment = Alignment.Center
+-                    ) {
+-                        Text(
+-                            text = "Chat",
+-                            fontSize = 12.5.sp,
+-                            fontWeight = if (activeAiTab == "chat") FontWeight.Bold else FontWeight.Normal,
+-                            color = if (activeAiTab == "chat") colors.text else colors.textTertiary
+-                        )
+-                    }
+ 
+@@ -479,20 +461,2 @@
+                 when (tab) {
+-                    "chat" -> {
+-                        AiChatbotView(
+-                            chatSessions = chatSessions,
+-                            activeChatSession = activeChatSession,
+-                            chatDetailedAnswers = chatDetailedAnswers,
+-                            chatSelectedModel = chatSelectedModel,
+-                            geminiState = geminiState,
+-                            onSetChatDetailedAnswers = onSetChatDetailedAnswers,
+-                            onSetChatSelectedModel = onSetChatSelectedModel,
+-                            onSendChatPrompt = onSendChatPrompt,
+-                            onStartNewChat = onStartNewChat,
+-                            onSelectChatSession = onSelectChatSession,
+-                            onDeleteChatSession = onDeleteChatSession,
+-                            onClearAllChats = onClearAllChats,
+-                            onSaveAsNote = onSaveAsNote,
+-                            isKeyConnected = isKeyConnected,
+-                            onConfigureApiKey = { showApiKeyDialog = true }
+-                        )
+-                    }
+                     "history" -> {

@@ -18,7 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Icon
@@ -43,6 +43,7 @@ fun GlassDock(
     isSyncActive: Boolean,
     onSyncClick: () -> Unit,
     onCreateClick: () -> Unit,
+    onChatbotClick: () -> Unit,
     onSettingsClick: () -> Unit,
     onVaultClick: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -69,16 +70,22 @@ fun GlassDock(
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Sync Dock Button
-            DockIconButton(
-                icon = Icons.Default.Sync,
-                label = "Sync",
-                showDot = isSyncActive,
-                onClick = onSyncClick
-            )
+            // Left Side (Sync Button)
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Sync Dock Button
+                DockIconButton(
+                    icon = Icons.Default.Sync,
+                    label = "Sync",
+                    showDot = isSyncActive,
+                    onClick = onSyncClick
+                )
+            }
 
             // Central Amber Plus Button
             val newInteraction = remember { MutableInteractionSource() }
@@ -103,13 +110,28 @@ fun GlassDock(
                 )
             }
 
-            // Settings Dock Button
-            DockIconButton(
-                icon = Icons.Default.Tune,
-                label = "Settings",
-                showDot = false,
-                onClick = onSettingsClick
-            )
+            // Right Side (AI Chat & Settings Buttons)
+            Row(
+                modifier = Modifier.weight(1f),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Chatbot Dock Button
+                DockIconButton(
+                    icon = androidx.compose.material.icons.Icons.Default.AutoAwesome,
+                    label = "AI Chat",
+                    showDot = false,
+                    onClick = onChatbotClick
+                )
+
+                // Settings Dock Button
+                DockIconButton(
+                    icon = Icons.Default.Tune,
+                    label = "Settings",
+                    showDot = false,
+                    onClick = onSettingsClick
+                )
+            }
         }
     }
 }
