@@ -292,14 +292,46 @@ object GeminiClient {
             """.trimIndent()
 
             GeminiSearchMode.GENERATE_HTML -> """
-                You are a world-class HTML & CSS UI engineer.
-                Your task is to build a complete, single-file, mobile-responsive HTML document or interactive widget.
-                Guidelines:
-                - Return valid HTML starting with <!DOCTYPE html> and containing <head>, <style>, <body>, and optional <script>.
-                - Use modern clean styling: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif.
-                - Use balanced padding, rounded corners (12px to 16px), subtle shadows, beautiful color gradients, and glassmorphic styling.
-                - If the prompt is a tool (e.g. calculator, stopwatch, unit converter, checklist, invoice, tip calculator, countdown, habit tracker), include robust embedded JavaScript inside <script> so all buttons and inputs are completely interactive!
-                - Do NOT wrap with markdown ticks if possible.
+                You are a world-class HTML & CSS UI engineer and interactive widget builder inside the "Glass Notes" app.
+
+                Your task is to generate a complete, single-file, mobile-responsive HTML document or interactive widget based on the user's request.
+
+                ## Output Rules:
+                1. Output ONLY raw HTML code. No markdown ticks, no explanations, no comments before or after the code.
+                2. Everything in a single HTML file — inline CSS in <style> and inline JavaScript in <script>. No external files, no CDN links, no external dependencies.
+                3. Do NOT wrap the output in markdown code blocks (no ```html or ```).
+
+                ## Design Rules:
+                4. Mobile-first, responsive, and visually beautiful. Use modern CSS: gradients, shadows, rounded corners, smooth transitions.
+                5. Clean modern color palette. Dark mode supported. Use system fonts only — NO Google Fonts, NO external font CDN.
+                6. Widget should look polished and production-ready, not like a demo.
+
+                ## Performance Rules (IMPORTANT — target device has 3GB RAM):
+                7. Keep JavaScript minimal and lightweight. Avoid heavy computations, infinite loops, or unnecessary animations.
+                8. NO external libraries — no jQuery, no React, no Chart.js, no Tailwind. Pure vanilla JS only.
+                9. Avoid CSS animations that cause repaints (transform and opacity are OK, avoid animating width/height/top/left).
+                10. Keep DOM elements minimal. Don't create unnecessary nested divs.
+
+                ## Functionality Rules:
+                11. If the request is a tool (calculator, stopwatch, unit converter, checklist, invoice, tip calculator, countdown, habit tracker, expense tracker, BMI calculator, etc.), include fully functional embedded JavaScript so ALL buttons, inputs, and interactions work.
+                12. Use localStorage for data persistence where applicable (saving checklist items, expense entries, calculator history, etc.).
+                13. All inputs must have proper validation and error handling.
+                14. Include clear visual feedback for user actions (button press states, toast messages, color changes).
+
+                ## Content Rules:
+                15. If the request is a note (study outline, summary, checklist, markdown document), structure it with clean HTML — headings, bullet points, tables, bold text.
+                16. For checklists, make items interactive — user can tap to check/uncheck, add new items, delete items.
+                17. For study notes, use proper hierarchy (h1, h2, h3) with visual distinction between sections.
+
+                ## Example prompts the user might give:
+                - "Interactive calculator" → fully working calculator with history
+                - "Expense tracker" → add/remove expenses with category and total
+                - "Pomodoro timer" → 25min work / 5min break with start/pause/reset
+                - "Habit tracker" → 7-day grid with tap to mark complete
+                - "Travel packing checklist" → add/check/delete items with localStorage
+                - "Unit converter" → length, weight, temperature conversion
+                - "BMI calculator" → weight + height input with category result
+                - "Countdown to New Year" → live countdown with days/hours/minutes/seconds
             """.trimIndent()
 
             GeminiSearchMode.GENERATE_NOTE -> """
@@ -762,75 +794,129 @@ object GeminiClient {
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>$title</title>
           <style>
-            * { box-sizing: border-box; }
+            * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
             body {
-              margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-              background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 90vh;
+              margin: 0; padding: 16px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+              background: #0f172a; color: #f8fafc; display: flex; justify-content: center; align-items: center; min-height: 95vh;
             }
             .calc-card {
               background: rgba(30, 41, 59, 0.85); backdrop-filter: blur(16px);
               border: 1px solid rgba(255,255,255,0.12); border-radius: 24px;
-              padding: 24px; width: 100%; max-width: 340px; box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+              padding: 20px; width: 100%; max-width: 360px; box-shadow: 0 20px 40px rgba(0,0,0,0.4);
             }
+            .header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+            .header-title { font-size: 15px; font-weight: 700; color: #94a3b8; }
+            .history-toggle { background: transparent; border: none; color: #38bdf8; font-size: 13px; font-weight: 600; cursor: pointer; padding: 4px 8px; }
+            .display-wrap {
+              background: #020617; border-radius: 16px; padding: 14px 18px; margin-bottom: 16px; border: 1px solid rgba(255,255,255,0.06);
+            }
+            .history-sub { font-size: 13px; color: #64748b; min-height: 18px; text-align: right; overflow-x: auto; white-space: nowrap; }
             .display {
-              background: #020617; border-radius: 16px; padding: 18px 20px; text-align: right;
-              font-size: 32px; font-weight: 700; color: #38bdf8; margin-bottom: 20px; overflow-x: auto;
+              text-align: right; font-size: 34px; font-weight: 800; color: #38bdf8; overflow-x: auto; white-space: nowrap;
             }
-            .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-            button {
-              background: rgba(51, 65, 85, 0.7); border: none; border-radius: 14px;
-              padding: 16px; font-size: 18px; font-weight: 600; color: #f8fafc; cursor: pointer; transition: all 0.15s ease;
+            .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+            button.btn {
+              background: rgba(51, 65, 85, 0.75); border: 1px solid rgba(255,255,255,0.06); border-radius: 14px;
+              padding: 16px 8px; font-size: 19px; font-weight: 600; color: #f8fafc; cursor: pointer; transition: transform 0.1s ease, opacity 0.1s ease;
             }
-            button:active { transform: scale(0.92); opacity: 0.8; }
-            button.op { background: #6366f1; color: #fff; }
+            button.btn:active { transform: scale(0.93); opacity: 0.75; }
+            button.op { background: #6366f1; color: #fff; font-weight: 700; }
             button.eq { background: #38bdf8; color: #020617; font-weight: 800; grid-column: span 2; }
-            button.clear { background: #ef4444; color: #fff; }
+            button.clear { background: #ef4444; color: #fff; font-weight: 700; }
+            .history-panel {
+              display: none; background: rgba(15, 23, 42, 0.95); border-radius: 14px; padding: 12px; margin-top: 14px;
+              max-height: 140px; overflow-y: auto; font-size: 12px; color: #cbd5e1; border: 1px solid rgba(255,255,255,0.08);
+            }
+            .hist-item { padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,0.05); display: flex; justify-content: space-between; }
           </style>
         </head>
         <body>
           <div class="calc-card">
-            <h3 style="margin: 0 0 14px 0; font-size: 16px; color: #94a3b8;">$title</h3>
-            <div class="display" id="screen">0</div>
+            <div class="header-row">
+              <span class="header-title">$title</span>
+              <button class="history-toggle" onclick="toggleHistory()">History</button>
+            </div>
+            <div class="display-wrap">
+              <div class="history-sub" id="subDisplay"></div>
+              <div class="display" id="screen">0</div>
+            </div>
             <div class="grid">
-              <button class="clear" onclick="clearScreen()">C</button>
-              <button class="op" onclick="press('/')">/</button>
-              <button class="op" onclick="press('*')">×</button>
-              <button class="op" onclick="press('-')">-</button>
-              <button onclick="press('7')">7</button>
-              <button onclick="press('8')">8</button>
-              <button onclick="press('9')">9</button>
-              <button class="op" onclick="press('+')">+</button>
-              <button onclick="press('4')">4</button>
-              <button onclick="press('5')">5</button>
-              <button onclick="press('6')">6</button>
-              <button onclick="press('.')">.</button>
-              <button onclick="press('1')">1</button>
-              <button onclick="press('2')">2</button>
-              <button onclick="press('3')">3</button>
-              <button onclick="press('0')">0</button>
-              <button class="eq" onclick="calc()">=</button>
+              <button class="btn clear" onclick="clearScreen()">C</button>
+              <button class="btn" onclick="backspace()">⌫</button>
+              <button class="btn op" onclick="press('/')">/</button>
+              <button class="btn op" onclick="press('*')">×</button>
+              <button class="btn" onclick="press('7')">7</button>
+              <button class="btn" onclick="press('8')">8</button>
+              <button class="btn" onclick="press('9')">9</button>
+              <button class="btn op" onclick="press('-')">-</button>
+              <button class="btn" onclick="press('4')">4</button>
+              <button class="btn" onclick="press('5')">5</button>
+              <button class="btn" onclick="press('6')">6</button>
+              <button class="btn op" onclick="press('+')">+</button>
+              <button class="btn" onclick="press('1')">1</button>
+              <button class="btn" onclick="press('2')">2</button>
+              <button class="btn" onclick="press('3')">3</button>
+              <button class="btn" onclick="press('.')">.</button>
+              <button class="btn" onclick="press('0')">0</button>
+              <button class="btn" onclick="press('00')">00</button>
+              <button class="btn eq" onclick="calc()">=</button>
+            </div>
+            <div class="history-panel" id="histPanel">
+              <div id="histList"><em>No previous calculations</em></div>
             </div>
           </div>
           <script>
             let current = '0';
+            let historyList = [];
+            try { historyList = JSON.parse(localStorage.getItem('calc_history') || '[]'); } catch(e){}
+
             function press(v) {
-              if (current === '0' && v !== '.') current = v;
+              if (current === '0' && v !== '.' && v !== '00') current = v;
+              else if (current === '0' && v === '00') return;
               else current += v;
-              document.getElementById('screen').innerText = current;
+              updateScreen();
+            }
+            function backspace() {
+              if (current.length > 1) current = current.slice(0, -1);
+              else current = '0';
+              updateScreen();
             }
             function clearScreen() {
               current = '0';
+              document.getElementById('subDisplay').innerText = '';
+              updateScreen();
+            }
+            function updateScreen() {
               document.getElementById('screen').innerText = current;
             }
             function calc() {
               try {
-                current = String(eval(current.replace('×', '*')));
-                document.getElementById('screen').innerText = current;
+                const expr = current.replace(/×/g, '*');
+                const result = Function('"use strict";return (' + expr + ')')();
+                const record = current + ' = ' + result;
+                document.getElementById('subDisplay').innerText = current + ' =';
+                current = String(result);
+                updateScreen();
+                historyList.unshift(record);
+                if (historyList.length > 15) historyList.pop();
+                try { localStorage.setItem('calc_history', JSON.stringify(historyList)); } catch(e){}
+                renderHistory();
               } catch(e) {
                 document.getElementById('screen').innerText = 'Error';
                 current = '0';
               }
             }
+            function toggleHistory() {
+              const panel = document.getElementById('histPanel');
+              panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+              renderHistory();
+            }
+            function renderHistory() {
+              const list = document.getElementById('histList');
+              if (!historyList.length) { list.innerHTML = '<em>No calculations yet</em>'; return; }
+              list.innerHTML = historyList.map(h => '<div class="hist-item"><span>' + h + '</span></div>').join('');
+            }
+            renderHistory();
           </script>
         </body>
         </html>
@@ -844,59 +930,119 @@ object GeminiClient {
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>$title</title>
           <style>
-            * { box-sizing: border-box; }
+            * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
             body {
-              margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+              margin: 0; padding: 16px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
               background: #0b1329; color: #f1f5f9; display: flex; justify-content: center;
             }
             .card {
-              background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(14px);
-              border: 1px solid rgba(255,255,255,0.1); border-radius: 20px;
-              padding: 24px; width: 100%; max-width: 480px; box-shadow: 0 15px 35px rgba(0,0,0,0.3);
+              background: rgba(30, 41, 59, 0.75); backdrop-filter: blur(14px);
+              border: 1px solid rgba(255,255,255,0.1); border-radius: 22px;
+              padding: 22px; width: 100%; max-width: 480px; box-shadow: 0 15px 35px rgba(0,0,0,0.3);
             }
-            h1 { font-size: 22px; margin-top: 0; color: #38bdf8; }
-            .input-row { display: flex; gap: 8px; margin-bottom: 20px; }
+            .header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 16px; }
+            h1 { font-size: 20px; margin: 0; color: #38bdf8; font-weight: 800; }
+            .counter { font-size: 13px; color: #94a3b8; font-weight: 600; }
+            .input-row { display: flex; gap: 8px; margin-bottom: 18px; }
             input[type="text"] {
               flex: 1; background: #1e293b; border: 1px solid #475569; border-radius: 12px;
-              padding: 12px 16px; color: #fff; font-size: 15px; outline: none;
+              padding: 12px 14px; color: #fff; font-size: 15px; outline: none;
             }
-            button.add {
-              background: #6366f1; border: none; border-radius: 12px; color: #fff;
-              font-weight: 700; padding: 12px 20px; cursor: pointer;
+            input[type="text"]:focus { border-color: #38bdf8; }
+            button.add-btn {
+              background: #38bdf8; border: none; border-radius: 12px; color: #020617;
+              font-weight: 800; padding: 12px 18px; cursor: pointer; transition: transform 0.1s ease;
             }
+            button.add-btn:active { transform: scale(0.95); opacity: 0.8; }
+            .list { display: flex; flex-direction: column; gap: 8px; }
             .item {
-              display: flex; align-items: center; gap: 12px; background: rgba(15, 23, 42, 0.6);
-              padding: 14px 16px; border-radius: 12px; margin-bottom: 10px; transition: all 0.2s ease;
+              display: flex; align-items: center; justify-content: space-between; background: rgba(15, 23, 42, 0.65);
+              padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); transition: background 0.15s ease;
             }
-            .item.done span { text-decoration: line-through; opacity: 0.5; }
-            input[type="checkbox"] { width: 18px; height: 18px; accent-color: #38bdf8; cursor: pointer; }
+            .item-left { display: flex; align-items: center; gap: 10px; flex: 1; cursor: pointer; }
+            .item.done span { text-decoration: line-through; opacity: 0.45; }
+            input[type="checkbox"] { width: 20px; height: 20px; accent-color: #38bdf8; cursor: pointer; }
+            .del-btn {
+              background: transparent; border: none; color: #ef4444; font-size: 16px; cursor: pointer; padding: 4px 8px; opacity: 0.7;
+            }
+            .del-btn:hover { opacity: 1; }
           </style>
         </head>
         <body>
           <div class="card">
-            <h1>$title</h1>
+            <div class="header">
+              <h1>$title</h1>
+              <span class="counter" id="counter">0 done</span>
+            </div>
             <div class="input-row">
-              <input type="text" id="taskInput" placeholder="Add a new checklist task..." onkeypress="if(event.key==='Enter') addTask()">
-              <button class="add" onclick="addTask()">Add</button>
+              <input type="text" id="taskInput" placeholder="Add task item..." onkeypress="if(event.key==='Enter') addTask()">
+              <button class="add-btn" onclick="addTask()">Add</button>
             </div>
-            <div id="list">
-              <div class="item"><input type="checkbox" onchange="toggle(this)"><span>Initial task item</span></div>
-              <div class="item"><input type="checkbox" onchange="toggle(this)"><span>Review project requirements</span></div>
-            </div>
+            <div class="list" id="list"></div>
           </div>
           <script>
+            const STORAGE_KEY = 'checklist_' + encodeURIComponent('$title');
+            let items = [];
+            try {
+              items = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+            } catch(e){}
+
+            if (!items.length) {
+              items = [
+                { text: 'Review initial requirements', done: false },
+                { text: 'Plan next action items', done: true }
+              ];
+            }
+
+            function save() {
+              try { localStorage.setItem(STORAGE_KEY, JSON.stringify(items)); } catch(e){}
+              render();
+            }
+
             function addTask() {
               const input = document.getElementById('taskInput');
-              if (!input.value.trim()) return;
-              const div = document.createElement('div');
-              div.className = 'item';
-              div.innerHTML = '<input type="checkbox" onchange="toggle(this)"><span>' + input.value.trim() + '</span>';
-              document.getElementById('list').appendChild(div);
+              const text = input.value.trim();
+              if (!text) return;
+              items.push({ text: text, done: false });
               input.value = '';
+              save();
             }
-            function toggle(cb) {
-              cb.parentElement.classList.toggle('done', cb.checked);
+
+            function toggleTask(index) {
+              items[index].done = !items[index].done;
+              save();
             }
+
+            function deleteTask(index) {
+              items.splice(index, 1);
+              save();
+            }
+
+            function render() {
+              const list = document.getElementById('list');
+              const doneCount = items.filter(i => i.done).length;
+              document.getElementById('counter').innerText = doneCount + '/' + items.length + ' done';
+              let html = '';
+              for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                const doneClass = item.done ? ' done' : '';
+                const checkedAttr = item.done ? ' checked' : '';
+                html += '<div class="item' + doneClass + '">' +
+                  '<div class="item-left" onclick="toggleTask(' + i + ')">' +
+                  '<input type="checkbox"' + checkedAttr + ' onclick="event.stopPropagation(); toggleTask(' + i + ')">' +
+                  '<span>' + escapeHtml(item.text) + '</span>' +
+                  '</div>' +
+                  '<button class="del-btn" onclick="deleteTask(' + i + ')">✕</button>' +
+                  '</div>';
+              }
+              list.innerHTML = html;
+            }
+
+            function escapeHtml(str) {
+              return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            }
+
+            render();
           </script>
         </body>
         </html>
@@ -910,50 +1056,82 @@ object GeminiClient {
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <title>$title</title>
           <style>
+            * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
             body {
-              margin: 0; padding: 24px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-              background: #090d16; color: #fff; display: flex; justify-content: center; align-items: center; min-height: 85vh;
+              margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+              background: #090d16; color: #fff; display: flex; justify-content: center; align-items: center; min-height: 90vh;
             }
             .card {
-              background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(16px);
+              background: rgba(30, 41, 59, 0.75); backdrop-filter: blur(16px);
               border: 1px solid rgba(255,255,255,0.1); border-radius: 24px;
-              padding: 32px 24px; text-align: center; width: 100%; max-width: 360px;
+              padding: 30px 24px; text-align: center; width: 100%; max-width: 360px;
             }
-            .time { font-size: 52px; font-weight: 800; font-variant-numeric: tabular-nums; color: #38bdf8; margin: 20px 0; }
+            .mode-tabs { display: flex; justify-content: center; gap: 8px; margin-bottom: 20px; }
+            .tab {
+              background: rgba(255,255,255,0.06); border: none; border-radius: 10px; color: #94a3b8;
+              padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer;
+            }
+            .tab.active { background: #38bdf8; color: #020617; }
+            .time { font-size: 54px; font-weight: 800; font-variant-numeric: tabular-nums; color: #38bdf8; margin: 16px 0 24px 0; }
             .btn-row { display: flex; justify-content: center; gap: 12px; }
-            button {
-              padding: 12px 24px; border: none; border-radius: 12px; font-weight: 700; font-size: 16px; cursor: pointer;
+            button.ctl {
+              padding: 14px 28px; border: none; border-radius: 14px; font-weight: 800; font-size: 16px; cursor: pointer;
+              transition: transform 0.1s ease;
             }
+            button.ctl:active { transform: scale(0.94); }
             .start { background: #10b981; color: #fff; }
             .reset { background: #475569; color: #fff; }
           </style>
         </head>
         <body>
           <div class="card">
-            <h2 style="margin: 0; font-size: 20px; color: #94a3b8;">$title</h2>
+            <div class="mode-tabs">
+              <button class="tab active" id="tabStopwatch" onclick="setMode('stopwatch')">Stopwatch</button>
+              <button class="tab" id="tabPomodoro" onclick="setMode('pomodoro')">Pomodoro (25m)</button>
+            </div>
             <div class="time" id="disp">00:00.0</div>
             <div class="btn-row">
-              <button class="start" id="btn" onclick="toggle()">Start</button>
-              <button class="reset" onclick="reset()">Reset</button>
+              <button class="ctl start" id="btn" onclick="toggle()">Start</button>
+              <button class="ctl reset" onclick="reset()">Reset</button>
             </div>
           </div>
           <script>
+            let mode = 'stopwatch';
             let timer = null, start = 0, elapsed = 0;
+            let pomoLeft = 25 * 60;
+
+            function setMode(m) {
+              if (timer) reset();
+              mode = m;
+              document.getElementById('tabStopwatch').className = 'tab ' + (m === 'stopwatch' ? 'active' : '');
+              document.getElementById('tabPomodoro').className = 'tab ' + (m === 'pomodoro' ? 'active' : '');
+              if (mode === 'pomodoro') {
+                document.getElementById('disp').innerText = '25:00';
+              } else {
+                document.getElementById('disp').innerText = '00:00.0';
+              }
+            }
+
             function toggle() {
               if (timer) {
                 clearInterval(timer);
                 timer = null;
-                elapsed += Date.now() - start;
+                if (mode === 'stopwatch') elapsed += Date.now() - start;
                 document.getElementById('btn').innerText = 'Resume';
-                document.getElementById('btn').className = 'start';
+                document.getElementById('btn').style.background = '#10b981';
               } else {
                 start = Date.now();
-                timer = setInterval(update, 50);
+                if (mode === 'stopwatch') {
+                  timer = setInterval(updateStopwatch, 50);
+                } else {
+                  timer = setInterval(updatePomodoro, 1000);
+                }
                 document.getElementById('btn').innerText = 'Pause';
                 document.getElementById('btn').style.background = '#f59e0b';
               }
             }
-            function update() {
+
+            function updateStopwatch() {
               const ms = elapsed + (Date.now() - start);
               const m = Math.floor(ms / 60000);
               const s = Math.floor((ms % 60000) / 1000);
@@ -961,13 +1139,35 @@ object GeminiClient {
               document.getElementById('disp').innerText = 
                 String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0') + '.' + d;
             }
+
+            function updatePomodoro() {
+              pomoLeft--;
+              if (pomoLeft <= 0) {
+                clearInterval(timer);
+                timer = null;
+                pomoLeft = 25 * 60;
+                document.getElementById('disp').innerText = '00:00';
+                document.getElementById('btn').innerText = 'Start';
+                alert('Pomodoro completed!');
+                return;
+              }
+              const m = Math.floor(pomoLeft / 60);
+              const s = pomoLeft % 60;
+              document.getElementById('disp').innerText = String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0');
+            }
+
             function reset() {
               clearInterval(timer);
               timer = null;
               elapsed = 0;
-              document.getElementById('disp').innerText = '00:00.0';
+              pomoLeft = 25 * 60;
               document.getElementById('btn').innerText = 'Start';
               document.getElementById('btn').style.background = '#10b981';
+              if (mode === 'pomodoro') {
+                document.getElementById('disp').innerText = '25:00';
+              } else {
+                document.getElementById('disp').innerText = '00:00.0';
+              }
             }
           </script>
         </body>
