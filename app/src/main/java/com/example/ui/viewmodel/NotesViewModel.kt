@@ -51,6 +51,8 @@ sealed interface GeminiQueryState {
 sealed interface WidgetNavAction {
     data class OpenNote(val id: String) : WidgetNavAction
     object CreateNote : WidgetNavAction
+    object OpenWidgetSettings : WidgetNavAction
+    object OpenSearch : WidgetNavAction
 }
 
 data class GroupedNotes(
@@ -72,6 +74,14 @@ class NotesViewModel(
 
     fun handleWidgetCreateNote() {
         _widgetNavAction.tryEmit(WidgetNavAction.CreateNote)
+    }
+
+    fun handleWidgetConfig() {
+        _widgetNavAction.tryEmit(WidgetNavAction.OpenWidgetSettings)
+    }
+
+    fun handleWidgetSearch() {
+        _widgetNavAction.tryEmit(WidgetNavAction.OpenSearch)
     }
 
     fun consumeWidgetNavAction() {

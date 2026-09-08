@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Upload
 import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material.icons.filled.ViewCarousel
 import androidx.compose.material.icons.filled.WbSunny
+import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -87,7 +88,8 @@ fun SettingsSheet(
     onRemoveDuplicates: () -> Unit,
     onWipeAllNotes: () -> Unit,
     onSetGeminiApiKey: (String) -> Unit = {},
-    onOpenVault: () -> Unit = {}
+    onOpenVault: () -> Unit = {},
+    onOpenWidgetSettings: () -> Unit = {}
 ) {
     val colors = GlassTheme.colors
     var deleteArmed by remember { mutableStateOf(false) }
@@ -271,6 +273,37 @@ fun SettingsSheet(
                         Text("+", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = colors.textSecondary)
                     }
                 }
+            }
+
+            // Section: Home Screen Widget
+            SectionHeader(title = "Home Screen Widget")
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable {
+                        onDismiss()
+                        onOpenWidgetSettings()
+                    }
+                    .padding(vertical = 10.dp, horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                SettingsIcon(icon = Icons.Default.Widgets)
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Configure Home Screen Widget",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Medium,
+                        color = colors.text
+                    )
+                    Text(
+                        text = "Set any note, checklists, or pinned notes to widget",
+                        fontSize = 12.sp,
+                        color = colors.textSecondary
+                    )
+                }
+                Text("›", fontSize = 20.sp, color = colors.textSecondary)
             }
 
             // Section: PDF Reader Engine & Quality

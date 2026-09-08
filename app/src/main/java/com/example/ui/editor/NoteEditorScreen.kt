@@ -55,6 +55,10 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.Widgets
+import com.example.util.VibrationHelper
+import com.example.widget.GlassNotesWidgetReceiver
+import com.example.widget.WidgetManager
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -76,7 +80,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import kotlinx.coroutines.launch
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
@@ -108,6 +114,8 @@ fun NoteEditorScreen(
     modifier: Modifier = Modifier
 ) {
     val colors = GlassTheme.colors
+    val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
 
     var title by remember(note.id) { mutableStateOf(note.title) }
@@ -365,6 +373,33 @@ fun NoteEditorScreen(
                                     imageVector = Icons.Default.Share,
                                     contentDescription = "Share",
                                     tint = colors.accent,
+                                    modifier = Modifier.size(17.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            // Set to Widget Button
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0x22F2B90C))
+                                    .telegramBounceClickable {
+                                        dismissFocusAndKeyboard()
+                                        WidgetManager.setSelectedNoteId(context, note.id)
+                                        VibrationHelper.tick(context)
+                                        android.widget.Toast.makeText(context, "📌 Set to Home Screen Widget!", android.widget.Toast.LENGTH_SHORT).show()
+                                        coroutineScope.launch {
+                                            GlassNotesWidgetReceiver.updateAllWidgets(context)
+                                        }
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Widgets,
+                                    contentDescription = "Set to Widget",
+                                    tint = Color(0xFFF2B90C),
                                     modifier = Modifier.size(17.dp)
                                 )
                             }

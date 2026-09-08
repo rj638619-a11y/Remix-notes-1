@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.Widgets
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ModalBottomSheet
@@ -69,7 +70,8 @@ fun NoteActionsSheet(
     onExportFile: () -> Unit,
     onShare: () -> Unit,
     onDelete: () -> Unit,
-    onRestore: (() -> Unit)? = null
+    onRestore: (() -> Unit)? = null,
+    onSetToWidget: () -> Unit = {}
 ) {
     val colors = GlassTheme.colors
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -135,6 +137,14 @@ fun NoteActionsSheet(
                 icon = Icons.Default.PushPin,
                 label = if (note.pinned) "Unpin" else "Pin to top",
                 onClick = { onDismiss(); onTogglePin() }
+            )
+
+            ActionRowItem(
+                icon = Icons.Default.Widgets,
+                label = "Set to Home Widget",
+                sub = "Display this note on your home screen widget",
+                tint = Color(0xFFF2B90C),
+                onClick = { onDismiss(); onSetToWidget() }
             )
 
             ActionRowItem(

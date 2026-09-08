@@ -71,6 +71,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -107,6 +108,9 @@ import com.example.ui.sheets.NoteActionsSheet
 import com.example.ui.sheets.SettingsSheet
 import com.example.ui.sheets.SortSheet
 import com.example.ui.sheets.SyncSheet
+import com.example.ui.sheets.WidgetNoteSelectorSheet
+import com.example.widget.WidgetManager
+import com.example.widget.GlassNotesWidgetReceiver
 import com.example.ui.theme.GlassTheme
 import com.example.ui.util.AmbientBackground
 import com.example.ui.viewmodel.NotesViewModel
@@ -114,6 +118,7 @@ import com.example.ui.viewmodel.ToastEvent
 import com.example.ui.viewmodel.WidgetNavAction
 import com.example.util.VibrationHelper
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.File
 
 sealed interface ActiveSheet {
@@ -123,6 +128,7 @@ sealed interface ActiveSheet {
     data class SetCategory(val note: NoteEntity) : ActiveSheet
     data class Clock(val kind: String = "timer") : ActiveSheet
     object Settings : ActiveSheet
+    object WidgetSettings : ActiveSheet
     object Sync : ActiveSheet
     object Sort : ActiveSheet
     data class GeminiSearch(val query: String = "", val mode: GeminiSearchMode = GeminiSearchMode.ASK_NOTES) : ActiveSheet
@@ -156,6 +162,7 @@ fun HomeScreen(
     val chatSelectedModel by viewModel.chatSelectedModel.collectAsStateWithLifecycle()
 
     val focusManager = LocalFocusManager.current
+    val coroutineScope = rememberCoroutineScope()
 
     var activeSheet by remember { mutableStateOf<ActiveSheet>(ActiveSheet.None) }
     var isVaultOpen by rememberSaveable { mutableStateOf(false) }
@@ -221,6 +228,13 @@ fun HomeScreen(
                 }
                 is WidgetNavAction.CreateNote -> {
                     activeSheet = ActiveSheet.Create
+                }
+                is WidgetNavAction.OpenWidgetSettings -> {
+                    activeSheet = ActiveSheet.WidgetSettings
+                }
+                is WidgetNavAction.OpenSearch -> {
+                    // Reset to search mode
+                    viewModel.setSearchQuery("")
                 }
             }
             viewModel.consumeWidgetNavAction()
@@ -892,6 +906,14 @@ fun HomeScreen(
                     },
                     onRestore = {
                         viewModel.restoreNote(sheet.note.id)
+                    },
+                    onSetToWidget = {
+                        WidgetManager.setSelectedNoteId(context, sheet.note.id)
+                        VibrationHelper.tick(context)
+                        android.widget.Toast.makeText(context, "📌 Note set to Home Widget!", android.widget.Toast.LENGTH_SHORT).show()
+                        coroutineScope.launch {
+                            GlassNotesWidgetReceiver.updateAllWidgets(context)
+                        }
                     }
                 )
             }
@@ -945,7 +967,15 @@ fun HomeScreen(
                     onRemoveDuplicates = { viewModel.removeDuplicateNotes() },
                     onWipeAllNotes = { viewModel.deleteAllNotes() },
                     onSetGeminiApiKey = { viewModel.setGeminiApiKey(it) },
-                    onOpenVault = { isVaultOpen = true }
+                    onOpenVault = { isVaultOpen = true },
+                    onOpenWidgetSettings = { activeSheet = ActiveSheet.WidgetSettings }
+                )
+            }
+
+            is ActiveSheet.WidgetSettings -> {
+                WidgetNoteSelectorSheet(
+                    allNotes = allNotes,
+                    onDismiss = { activeSheet = ActiveSheet.None }
                 )
             }
 

@@ -33,6 +33,8 @@ class MainActivity : FragmentActivity() {
         const val EXTRA_OPEN_NOTE_ID = "EXTRA_OPEN_NOTE_ID"
         const val EXTRA_ACTION = "EXTRA_ACTION"
         const val ACTION_CREATE = "create"
+        const val ACTION_WIDGET_CONFIG = "widget_config"
+        const val ACTION_SEARCH = "search"
     }
 
     private val viewModel: NotesViewModel by viewModels {
@@ -102,6 +104,10 @@ class MainActivity : FragmentActivity() {
             viewModel.handleWidgetOpenNote(openNoteId)
         } else if (action == ACTION_CREATE) {
             viewModel.handleWidgetCreateNote()
+        } else if (action == ACTION_WIDGET_CONFIG) {
+            viewModel.handleWidgetConfig()
+        } else if (action == ACTION_SEARCH) {
+            viewModel.handleWidgetSearch()
         }
     }
 
