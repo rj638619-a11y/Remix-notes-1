@@ -82,6 +82,18 @@ object VaultFaceBiometricHelper {
         return null
     }
 
+    private var activePrompt: BiometricPrompt? = null
+
+    /**
+     * Cancels any active biometric prompt to prevent lifecycle-related callbacks.
+     */
+    fun cancelActiveAuthentication() {
+        try {
+            activePrompt?.cancelAuthentication()
+        } catch (_: Exception) {}
+        activePrompt = null
+    }
+
     /**
      * Prompts for Biometric (Face / Fingerprint) authentication
      */
@@ -127,11 +139,13 @@ object VaultFaceBiometricHelper {
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                     super.onAuthenticationSucceeded(result)
+                    activePrompt = null
                     onSuccess()
                 }
 
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
+                    activePrompt = null
                     onError(errorCode, errString)
                 }
 
@@ -142,9 +156,12 @@ object VaultFaceBiometricHelper {
             }
         )
 
+        activePrompt = biometricPrompt
+
         try {
             biometricPrompt.authenticate(promptInfo)
         } catch (e: Exception) {
+            activePrompt = null
             onError(BiometricPrompt.ERROR_UNABLE_TO_PROCESS, e.message ?: "Authentication failed")
         }
     }

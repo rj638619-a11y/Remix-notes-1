@@ -147,6 +147,13 @@ fun VaultLockScreen(
         }
     }
 
+    // Cancel any active biometric authentication when this composable leaves composition
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        onDispose {
+            VaultFaceBiometricHelper.cancelActiveAuthentication()
+        }
+    }
+
     // Auto-launch Biometric Unlock only if hardware is available and enrolled
     LaunchedEffect(Unit) {
         if (securityManager.isFaceUnlockEnabled() && isBiometricAvailable) {

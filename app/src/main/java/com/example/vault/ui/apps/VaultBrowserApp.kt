@@ -201,6 +201,7 @@ fun VaultBrowserApp(
         )
     }
     var activeTabId by remember { mutableStateOf(tabs.first().id) }
+    var lastActiveTabId by remember { mutableStateOf(activeTabId) }
     val currentTab = tabs.find { it.id == activeTabId } ?: tabs.first()
 
     // Browser navigation & page state
@@ -1023,15 +1024,13 @@ fun VaultBrowserApp(
                                     // Real-time media sniffing for streaming videos / images
                                     val lowerUrl = reqUrl.lowercase()
                                     if (lowerUrl.contains(".mp4") || lowerUrl.contains(".webm") || lowerUrl.contains(".m4v") || lowerUrl.contains(".m3u8")) {
-                                        if (detectedMedia.none { it.url == reqUrl }) {
-                                            view?.post {
-                                                if (detectedMedia.none { it.url == reqUrl }) {
-                                                    detectedMedia.add(SniffedMedia(type = "video", url = reqUrl, name = "Stream_${detectedMedia.size + 1}"))
-                                                }
+                                        view?.post {
+                                            if (detectedMedia.none { it.url == reqUrl }) {
+                                                detectedMedia.add(SniffedMedia(type = "video", url = reqUrl, name = "Stream_${detectedMedia.size + 1}"))
                                             }
                                         }
                                     } else if (lowerUrl.endsWith(".jpg") || lowerUrl.endsWith(".jpeg") || lowerUrl.endsWith(".png") || lowerUrl.endsWith(".webp") || lowerUrl.endsWith(".gif")) {
-                                        if (!lowerUrl.contains("favicon") && !lowerUrl.contains("pixel") && !lowerUrl.contains("tracker") && detectedMedia.none { it.url == reqUrl }) {
+                                        if (!lowerUrl.contains("favicon") && !lowerUrl.contains("pixel") && !lowerUrl.contains("tracker")) {
                                             view?.post {
                                                 if (detectedMedia.none { it.url == reqUrl }) {
                                                     detectedMedia.add(SniffedMedia(type = "photo", url = reqUrl, name = "Image_${detectedMedia.size + 1}"))
@@ -1041,7 +1040,9 @@ fun VaultBrowserApp(
                                     }
 
                                     if (adBlockerEnabled && isAdRequest(reqUrl)) {
-                                        blockedAdsCount++
+                                        view?.post {
+                                            blockedAdsCount++
+                                        }
                                         return WebResourceResponse("text/plain", "UTF-8", ByteArrayInputStream(ByteArray(0)))
                                     }
                                     return super.shouldInterceptRequest(view, request)
@@ -1145,7 +1146,8 @@ fun VaultBrowserApp(
                         }
                     },
                     update = { wv ->
-                        if (wv.url != currentTab.url && !isLoading) {
+                        if (activeTabId != lastActiveTabId) {
+                            lastActiveTabId = activeTabId
                             wv.loadUrl(currentTab.url)
                         }
                     },
