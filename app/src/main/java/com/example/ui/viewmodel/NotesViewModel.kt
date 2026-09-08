@@ -14,6 +14,8 @@ import com.example.data.model.AiHistoryItem
 import com.example.data.model.AppSettings
 import com.example.data.model.NoteEntity
 import com.example.data.model.NoteSummary
+import com.example.data.model.ChatSession
+import com.example.data.model.ChatMessage
 import com.example.data.repository.NoteRepository
 import com.example.util.AudioTimerHelper
 import com.example.util.DateFormatter
@@ -147,6 +149,19 @@ class NotesViewModel(
     // Mode-specific AI History
     private val _aiHistory = MutableStateFlow<List<AiHistoryItem>>(emptyList())
     val aiHistory = _aiHistory.asStateFlow()
+
+    // Chatbot States & Parameters
+    private val _chatSessions = MutableStateFlow<List<ChatSession>>(emptyList())
+    val chatSessions = _chatSessions.asStateFlow()
+
+    private val _activeChatSession = MutableStateFlow<ChatSession?>(null)
+    val activeChatSession = _activeChatSession.asStateFlow()
+
+    private val _chatDetailedAnswers = MutableStateFlow(false)
+    val chatDetailedAnswers = _chatDetailedAnswers.asStateFlow()
+
+    private val _chatSelectedModel = MutableStateFlow("gemini-3.5-flash")
+    val chatSelectedModel = _chatSelectedModel.asStateFlow()
 
     private var clockTickerJob: Job? = null
     private var recentlyDeletedNote: NoteEntity? = null
@@ -282,6 +297,7 @@ class NotesViewModel(
         viewModelScope.launch(Dispatchers.IO) {
             delay(1500)
             loadAiHistory(settings.value.readerMode)
+            loadChatSessions()
             repository.removeDuplicateNotes()
             try {
                 com.example.data.sync.HtmlSyncWorker.schedulePeriodicSync(getApplication())
@@ -530,6 +546,255 @@ class NotesViewModel(
             repository.clearAiHistory(modeType)
             _aiHistory.value = emptyList()
             showToast("AI history cleared for ${if (modeType == "pdf") "PDF" else "HTML"} mode")
+        }
+    }
+
+    // --- Chatbot Session & Send Actions ---
+
+    fun setChatDetailedAnswers(enabled: Boolean) {
+        _chatDetailedAnswers.value = enabled
+    }
+
+    fun setChatSelectedModel(model: String) {
+        _chatSelectedModel.value = model
+    }
+
+    fun loadChatSessions() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val sessions = repository.getChatSessions()
+            _chatSessions.value = sessions
+            if (_activeChatSession.value == null && sessions.isNotEmpty()) {
+                _activeChatSession.value = sessions.first()
+            }
+        }
+    }
+
+    fun startNewChatSession() {
+        viewModelScope.launch {
+            val newSession = ChatSession(
+                id = UUID.randomUUID().toString(),
+                title = "New Chat",
+                messages = emptyList(),
+                lastUpdated = System.currentTimeMillis()
+            )
+            repository.saveChatSession(newSession)
+            _activeChatSession.value = newSession
+            loadChatSessions()
+        }
+    }
+
+    fun setActiveChatSession(sessionId: String) {
+        val found = _chatSessions.value.find { it.id == sessionId }
+        if (found != null) {
+            _activeChatSession.value = found
+        }
+    }
+
+    fun deleteChatSession(sessionId: String) {
+        viewModelScope.launch {
+            repository.deleteChatSession(sessionId)
+            if (_activeChatSession.value?.id == sessionId) {
+                _activeChatSession.value = null
+            }
+            loadChatSessions()
+            showToast("Chat session deleted")
+        }
+    }
+
+    fun clearAllChatSessions() {
+        viewModelScope.launch {
+            repository.clearChatSessions()
+            _activeChatSession.value = null
+            _chatSessions.value = emptyList()
+            showToast("All chats cleared")
+        }
+    }
+
+    fun sendChatPrompt(prompt: String) {
+        val trimmed = prompt.trim()
+        if (trimmed.isEmpty()) return
+        
+        viewModelScope.launch {
+            var session = _activeChatSession.value
+            if (session == null) {
+                session = ChatSession(
+                    id = UUID.randomUUID().toString(),
+                    title = trimmed.take(25),
+                    messages = emptyList(),
+                    lastUpdated = System.currentTimeMillis()
+                )
+            }
+            
+            // 1. Create user message
+            val userMsg = ChatMessage(
+                sender = "user",
+                content = trimmed,
+                modelUsed = _chatSelectedModel.value
+            )
+            
+            // 2. Append to session
+            val updatedMessages = session.messages + userMsg
+            val updatedTitle = if (session.title == "New Chat" || session.title.isBlank()) {
+                trimmed.take(25) + if (trimmed.length > 25) "..." else ""
+            } else {
+                session.title
+            }
+            
+            val updatedSession = session.copy(
+                title = updatedTitle,
+                messages = updatedMessages,
+                lastUpdated = System.currentTimeMillis()
+            )
+            
+            _activeChatSession.value = updatedSession
+            repository.saveChatSession(updatedSession)
+            loadChatSessions()
+            
+            // 3. Set loading state
+            _geminiState.value = GeminiQueryState.Loading(trimmed, GeminiSearchMode.ASK_NOTES)
+            
+            // 4. Query Gemini with history
+            // Compile conversation history for the context
+            val historyBlock = updatedSession.messages.joinToString("\n") { msg ->
+                val role = if (msg.sender == "user") "User" else "Assistant"
+                "$role: ${msg.content}"
+            }
+            
+            val finalQuery = "$historyBlock\nUser: $trimmed"
+            val result = GeminiClient.queryGemini(
+                query = finalQuery,
+                mode = GeminiSearchMode.ASK_NOTES,
+                allNotes = allNotes.value,
+                customKey = settings.value.geminiApiKey,
+                selectedModel = _chatSelectedModel.value,
+                detailedAnswers = _chatDetailedAnswers.value
+            )
+            
+            if (result.error != null && result.content.isBlank()) {
+                _geminiState.value = GeminiQueryState.Error(result.error, trimmed, GeminiSearchMode.ASK_NOTES)
+                // Append error message as AI response for graceful experience
+                val errorMsg = ChatMessage(
+                    sender = "ai",
+                    content = "Sorry, I encountered an error: ${result.error}. Please check your connection or API key.",
+                    modelUsed = result.modelUsed ?: _chatSelectedModel.value
+                )
+                val errorSession = updatedSession.copy(
+                    messages = updatedSession.messages + errorMsg,
+                    lastUpdated = System.currentTimeMillis()
+                )
+                _activeChatSession.value = errorSession
+                repository.saveChatSession(errorSession)
+                loadChatSessions()
+            } else {
+                _geminiState.value = GeminiQueryState.Success(result, trimmed, GeminiSearchMode.ASK_NOTES)
+                
+                // Append AI response
+                val aiMsg = ChatMessage(
+                    sender = "ai",
+                    content = result.content,
+                    modelUsed = result.modelUsed ?: _chatSelectedModel.value
+                )
+                val finalSession = updatedSession.copy(
+                    messages = updatedSession.messages + aiMsg,
+                    lastUpdated = System.currentTimeMillis()
+                )
+                _activeChatSession.value = finalSession
+                repository.saveChatSession(finalSession)
+                loadChatSessions()
+                
+                // Parse and execute any agent action blocks automatically
+                val content = result.content
+                if (content.contains("<app_action>") && content.contains("</app_action>")) {
+                    try {
+                        val startIndex = content.indexOf("<app_action>") + "<app_action>".length
+                        val endIndex = content.indexOf("</app_action>")
+                        val jsonString = content.substring(startIndex, endIndex).trim()
+                        val jsonArray = org.json.JSONArray(jsonString)
+                        for (i in 0 until jsonArray.length()) {
+                            val obj = jsonArray.getJSONObject(i)
+                            when (val action = obj.optString("action")) {
+                                "create_note" -> {
+                                    val type = obj.optString("type", "text")
+                                    val title = obj.optString("title", "Untitled Note")
+                                    val noteContent = obj.optString("content", "")
+                                    createNote(type) { newId ->
+                                        saveNote(newId, title, noteContent)
+                                        showToast("Agent: Created note '$title'")
+                                    }
+                                }
+                                "save_note" -> {
+                                    val id = obj.optString("id")
+                                    val title = obj.optString("title")
+                                    val noteContent = obj.optString("content")
+                                    if (id.isNotBlank()) {
+                                        saveNote(id, title, noteContent)
+                                        showToast("Agent: Saved note '$title'")
+                                    }
+                                }
+                                "delete_note" -> {
+                                    val id = obj.optString("id")
+                                    if (id.isNotBlank()) {
+                                        deleteNote(id)
+                                        showToast("Agent: Moved note to trash")
+                                    }
+                                }
+                                "restore_note" -> {
+                                    val id = obj.optString("id")
+                                    if (id.isNotBlank()) {
+                                        restoreNote(id)
+                                        showToast("Agent: Restored note")
+                                    }
+                                }
+                                "empty_trash" -> {
+                                    emptyTrash()
+                                    showToast("Agent: Emptied trash")
+                                }
+                                "set_category" -> {
+                                    val id = obj.optString("id")
+                                    val category = obj.optString("category")
+                                    if (id.isNotBlank()) {
+                                        setNoteCategory(id, category.takeIf { it.isNotBlank() })
+                                        showToast("Agent: Set category to '$category'")
+                                    }
+                                }
+                                "toggle_pin" -> {
+                                    val id = obj.optString("id")
+                                    if (id.isNotBlank()) {
+                                        togglePin(id)
+                                        showToast("Agent: Toggled note pin")
+                                    }
+                                }
+                                "timer_start" -> {
+                                    val mins = obj.optInt("minutes", 5)
+                                    timerStart(mins)
+                                    showToast("Agent: Started $mins min timer")
+                                }
+                                "timer_pause" -> {
+                                    timerPause()
+                                    showToast("Agent: Paused timer")
+                                }
+                                "sw_start" -> {
+                                    swStart()
+                                    showToast("Agent: Started stopwatch")
+                                }
+                                "sw_pause" -> {
+                                    swPause()
+                                    showToast("Agent: Paused stopwatch")
+                                }
+                                "set_theme" -> {
+                                    val theme = obj.optString("theme")
+                                    if (theme.isNotBlank()) {
+                                        setTheme(theme)
+                                        showToast("Agent: Set theme to '$theme'")
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
         }
     }
 

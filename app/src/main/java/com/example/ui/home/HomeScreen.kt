@@ -149,6 +149,11 @@ fun HomeScreen(
     val aiHistory by viewModel.aiHistory.collectAsStateWithLifecycle()
     val trashCount by viewModel.trashCount.collectAsStateWithLifecycle()
 
+    val chatSessions by viewModel.chatSessions.collectAsStateWithLifecycle()
+    val activeChatSession by viewModel.activeChatSession.collectAsStateWithLifecycle()
+    val chatDetailedAnswers by viewModel.chatDetailedAnswers.collectAsStateWithLifecycle()
+    val chatSelectedModel by viewModel.chatSelectedModel.collectAsStateWithLifecycle()
+
     val focusManager = LocalFocusManager.current
 
     var activeSheet by remember { mutableStateOf<ActiveSheet>(ActiveSheet.None) }
@@ -995,7 +1000,18 @@ fun HomeScreen(
                     },
                     onClearHistory = {
                         viewModel.clearAiHistory(settings.readerMode)
-                    }
+                    },
+                    chatSessions = chatSessions,
+                    activeChatSession = activeChatSession,
+                    chatDetailedAnswers = chatDetailedAnswers,
+                    chatSelectedModel = chatSelectedModel,
+                    onSetChatDetailedAnswers = { viewModel.setChatDetailedAnswers(it) },
+                    onSetChatSelectedModel = { viewModel.setChatSelectedModel(it) },
+                    onSendChatPrompt = { viewModel.sendChatPrompt(it) },
+                    onStartNewChat = { viewModel.startNewChatSession() },
+                    onSelectChatSession = { viewModel.setActiveChatSession(it) },
+                    onDeleteChatSession = { viewModel.deleteChatSession(it) },
+                    onClearAllChats = { viewModel.clearAllChatSessions() }
                 )
             }
 

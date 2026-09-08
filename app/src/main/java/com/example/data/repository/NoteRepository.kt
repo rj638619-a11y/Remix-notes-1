@@ -751,4 +751,100 @@ class NoteRepository(
         val key = if (modeType == "pdf") "pref_ai_history_pdf" else "pref_ai_history_html"
         prefs.edit().remove(key).apply()
     }
+
+    // --- Chat Sessions Persistence ---
+
+    fun getChatSessions(): List<com.example.data.model.ChatSession> {
+        val rawJson = prefs.getString("pref_chat_sessions", "[]") ?: "[]"
+        val list = mutableListOf<com.example.data.model.ChatSession>()
+        try {
+            val arr = JSONArray(rawJson)
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                val msgArr = obj.optJSONArray("messages") ?: JSONArray()
+                val messages = mutableListOf<com.example.data.model.ChatMessage>()
+                for (j in 0 until msgArr.length()) {
+                    val mObj = msgArr.getJSONObject(j)
+                    messages.add(
+                        com.example.data.model.ChatMessage(
+                            id = mObj.optString("id", UUID.randomUUID().toString().take(8)),
+                            sender = mObj.optString("sender", "user"),
+                            content = mObj.optString("content", ""),
+                            timestamp = mObj.optLong("timestamp", System.currentTimeMillis()),
+                            modelUsed = mObj.optString("modelUsed", null).takeIf { it != "null" && it.isNotBlank() }
+                        )
+                    )
+                }
+                list.add(
+                    com.example.data.model.ChatSession(
+                        id = obj.optString("id"),
+                        title = obj.optString("title", "New Chat"),
+                        messages = messages,
+                        lastUpdated = obj.optLong("lastUpdated", System.currentTimeMillis())
+                    )
+                )
+            }
+        } catch (_: Exception) {}
+        return list.sortedByDescending { it.lastUpdated }
+    }
+
+    suspend fun saveChatSession(session: com.example.data.model.ChatSession) = withContext(Dispatchers.IO) {
+        val existing = getChatSessions().toMutableList()
+        existing.removeAll { it.id == session.id }
+        existing.add(0, session)
+        val capped = existing.take(50) // limit to 50 active chats
+
+        val arr = JSONArray()
+        for (s in capped) {
+            val obj = JSONObject().apply {
+                put("id", s.id)
+                put("title", s.title)
+                put("lastUpdated", s.lastUpdated)
+                val msgArr = JSONArray()
+                for (m in s.messages) {
+                    val mObj = JSONObject().apply {
+                        put("id", m.id)
+                        put("sender", m.sender)
+                        put("content", m.content)
+                        put("timestamp", m.timestamp)
+                        put("modelUsed", m.modelUsed ?: "")
+                    }
+                    msgArr.put(mObj)
+                }
+                put("messages", msgArr)
+            }
+            arr.put(obj)
+        }
+        prefs.edit().putString("pref_chat_sessions", arr.toString()).apply()
+    }
+
+    suspend fun deleteChatSession(id: String) = withContext(Dispatchers.IO) {
+        val existing = getChatSessions().filter { it.id != id }
+        val arr = JSONArray()
+        for (s in existing) {
+            val obj = JSONObject().apply {
+                put("id", s.id)
+                put("title", s.title)
+                put("lastUpdated", s.lastUpdated)
+                val msgArr = JSONArray()
+                for (m in s.messages) {
+                    val mObj = JSONObject().apply {
+                        put("id", m.id)
+                        put("sender", m.sender)
+                        put("content", m.content)
+                        put("timestamp", m.timestamp)
+                        put("modelUsed", m.modelUsed ?: "")
+                    }
+                    msgArr.put(mObj)
+                }
+                put("messages", msgArr)
+            }
+            arr.put(obj)
+        }
+        prefs.edit().putString("pref_chat_sessions", arr.toString()).apply()
+    }
+
+    suspend fun clearChatSessions() = withContext(Dispatchers.IO) {
+        prefs.edit().remove("pref_chat_sessions").apply()
+    }
 }

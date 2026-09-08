@@ -137,7 +137,9 @@ object GeminiClient {
         query: String,
         mode: GeminiSearchMode,
         allNotes: List<NoteEntity> = emptyList(),
-        customKey: String? = null
+        customKey: String? = null,
+        selectedModel: String? = null,
+        detailedAnswers: Boolean = false
     ): GeminiResult = withContext(Dispatchers.IO) {
         val apiKeys = parseApiKeys(customKey)
         if (apiKeys.isEmpty()) {
@@ -150,15 +152,24 @@ object GeminiClient {
             )
         }
 
+        val modelsToUse = if (selectedModel != null && selectedModel.isNotBlank()) {
+            listOf(selectedModel) + MODELS_TO_TRY.filter { it != selectedModel }
+        } else {
+            MODELS_TO_TRY
+        }
+
         var lastError: String? = null
         var fallbackReason: String? = null
 
-        // Multi-key & 5-model automated rotation loop
+        // Multi-key & model automated rotation loop
         for ((keyIndex, apiKey) in apiKeys.withIndex()) {
-            for ((modelIndex, modelName) in MODELS_TO_TRY.withIndex()) {
+            for ((modelIndex, modelName) in modelsToUse.withIndex()) {
                 try {
                     val baseUrl = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent"
-                    val systemPrompt = buildSystemPrompt(mode, allNotes)
+                    var systemPrompt = buildSystemPrompt(mode, allNotes)
+                    if (detailedAnswers) {
+                        systemPrompt += "\nDETAILED ANSWERS MODE ACTIVATED: The user expects highly detailed, exhaustive, and long-form responses. Expand fully on every concept, provide complete code or step-by-step guides, lists, and deep reasoning, and write as much as necessary to give a complete and thorough answer."
+                    }
                     val userPrompt = buildUserPrompt(query, mode, allNotes)
 
                     val jsonBody = JSONObject().apply {
@@ -188,6 +199,7 @@ object GeminiClient {
                             put("temperature", if (mode == GeminiSearchMode.GENERATE_HTML) 0.3 else 0.7)
                             put("topP", 0.95)
                             put("topK", 40)
+                            put("maxOutputTokens", 4096)
                         }
                         put("generationConfig", genConfig)
                     }
@@ -204,7 +216,7 @@ object GeminiClient {
                     if (!response.isSuccessful) {
                         val isLimit = isRateLimitOrQuotaExhausted(response.code, resString)
                         val prevDisplayName = getModelDisplayName(modelName)
-                        val nextModelName = MODELS_TO_TRY.getOrNull(modelIndex + 1)
+                        val nextModelName = modelsToUse.getOrNull(modelIndex + 1)
                         if (isLimit && nextModelName != null) {
                             val nextDisplayName = getModelDisplayName(nextModelName)
                             fallbackReason = "Switched to $nextDisplayName (usage limit reached on $prevDisplayName)"
@@ -397,29 +409,16 @@ object GeminiClient {
     private fun buildUserPrompt(query: String, mode: GeminiSearchMode, notes: List<NoteEntity>): String {
         return when (mode) {
             GeminiSearchMode.ASK_NOTES -> {
-                val notesContext = notes.take(50).joinToString("\n\n") { note ->
-                    val noteKind = when (note.type) {
-                        "pdf" -> "PDF Document"
-                        "html" -> "HTML Note / Widget"
-                        else -> "Text / Markdown Note"
-                    }
-                    val bodyExcerpt = if (note.type == "pdf") {
-                        "PDF Document: ${note.displayTitle} | Source: ${note.source ?: "Local storage"}"
-                    } else {
-                        note.content.take(800)
-                    }
-                    "--- Note ID: ${note.id} | Kind: $noteKind | Title: ${note.displayTitle} ---\nSnippet: ${note.snippet}\nContent: $bodyExcerpt"
+                val notesCatalog = notes.take(80).joinToString("\n") { note ->
+                    "• [ID: ${note.id}] (${note.type}) ${note.displayTitle}"
                 }
-                val htmlCount = notes.count { it.type == "html" }
-                val pdfCount = notes.count { it.type == "pdf" }
-                val textCount = notes.count { it.type == "text" }
                 """
                 User Query: "$query"
 
-                User's Notes Database (${notes.size} total notes available: $htmlCount HTML, $pdfCount PDF, $textCount Text):
-                $notesContext
+                Available Notes in Database (${notes.size} total notes):
+                $notesCatalog
 
-                Please provide a direct, comprehensive, and helpful response addressing the user's query. If the user asks for explanations, note generation, code, or answers to questions, fulfill it thoroughly and cite any relevant notes from the database.
+                Please provide a direct, helpful, and comprehensive response. You have access to note titles and metadata for app actions, but do not scan raw note contents. Answer the user directly, quickly and thoroughly.
                 """.trimIndent()
             }
 
