@@ -45,7 +45,6 @@ fun GlassDock(
     onCreateClick: () -> Unit,
     onChatbotClick: () -> Unit,
     onSettingsClick: () -> Unit,
-    onVaultClick: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = GlassTheme.colors

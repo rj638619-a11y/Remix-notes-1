@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.example.data.db.NoteDao
 import com.example.data.model.AppSettings
 import com.example.data.model.NoteEntity
@@ -31,6 +33,39 @@ class NoteRepository(
     private val context: Context
 ) {
     private val prefs: SharedPreferences = context.getSharedPreferences("glass_notes_prefs", Context.MODE_PRIVATE)
+
+    private val securePrefs: SharedPreferences by lazy {
+        try {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+
+            EncryptedSharedPreferences.create(
+                context,
+                "glassnotes_secure_prefs",
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (e: Exception) {
+            context.getSharedPreferences("glassnotes_secure_prefs_fallback", Context.MODE_PRIVATE)
+        }
+    }
+
+    private fun getEncryptedGeminiApiKey(): String {
+        val oldKey = prefs.getString("pref_gemini_api_key", null)
+        if (!oldKey.isNullOrBlank()) {
+            securePrefs.edit().putString("gemini_api_key", oldKey).apply()
+            prefs.edit().remove("pref_gemini_api_key").apply()
+            return oldKey
+        }
+        return securePrefs.getString("gemini_api_key", "") ?: ""
+    }
+
+    private fun saveEncryptedGeminiApiKey(key: String) {
+        securePrefs.edit().putString("gemini_api_key", key).apply()
+        prefs.edit().remove("pref_gemini_api_key").apply()
+    }
 
     private val _settingsFlow = MutableStateFlow(loadSettings())
     val settingsFlow = _settingsFlow.asStateFlow()
@@ -78,7 +113,7 @@ class NoteRepository(
             pdfPageMode = prefs.getString("pref_pdf_page_mode", "continuous") ?: "continuous",
             pdfColorFilter = prefs.getString("pref_pdf_color_filter", "default") ?: "default",
             pdfRenderQuality = prefs.getString("pref_pdf_render_quality", "sharp") ?: "sharp",
-            geminiApiKey = prefs.getString("pref_gemini_api_key", "") ?: "",
+            geminiApiKey = getEncryptedGeminiApiKey(),
             hapticsEnabled = prefs.getBoolean("pref_haptics_enabled", true)
         )
     }
@@ -86,6 +121,9 @@ class NoteRepository(
     suspend fun updateSettings(transform: (AppSettings) -> AppSettings) = withContext(Dispatchers.IO) {
         val current = _settingsFlow.value
         val updated = transform(current)
+        if (updated.geminiApiKey != current.geminiApiKey) {
+            saveEncryptedGeminiApiKey(updated.geminiApiKey)
+        }
         prefs.edit()
             .putString("pref_theme", updated.theme)
             .putBoolean("pref_reduce", updated.reduceTransparency)
@@ -102,7 +140,6 @@ class NoteRepository(
             .putString("pref_pdf_page_mode", updated.pdfPageMode)
             .putString("pref_pdf_color_filter", updated.pdfColorFilter)
             .putString("pref_pdf_render_quality", updated.pdfRenderQuality)
-            .putString("pref_gemini_api_key", updated.geminiApiKey)
             .putBoolean("pref_haptics_enabled", updated.hapticsEnabled)
             .apply()
         _settingsFlow.value = updated

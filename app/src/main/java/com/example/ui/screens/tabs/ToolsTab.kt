@@ -1,5 +1,9 @@
 package com.example.ui.screens.tabs
 
+import android.content.Context
+import androidx.compose.ui.platform.LocalContext
+import org.json.JSONArray
+import org.json.JSONObject
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
@@ -138,14 +142,56 @@ fun ToolsTab(
     var selectedNoteForAnalysis by remember { mutableStateOf(notes.firstOrNull()) }
     var toolSuccessMessage by remember { mutableStateOf<String?>(null) }
 
-    // Study tasks state
+    // Study tasks state with SharedPreferences persistence
+    val context = LocalContext.current
+    val taskPrefs = remember { context.getSharedPreferences("glass_study_tasks_prefs", Context.MODE_PRIVATE) }
+
+    fun saveTasksToPrefs(tasks: List<StudyTask>) {
+        try {
+            val array = JSONArray()
+            for (t in tasks) {
+                val obj = JSONObject().apply {
+                    put("id", t.id)
+                    put("title", t.title)
+                    put("subject", t.subject)
+                    put("isCompleted", t.isCompleted)
+                }
+                array.put(obj)
+            }
+            taskPrefs.edit().putString("saved_tasks_json", array.toString()).apply()
+        } catch (_: Exception) {}
+    }
+
     val studyTasks = remember {
-        mutableStateListOf(
-            StudyTask("1", "Read Chapter 4: Photosynthesis & Light Reactions", "Biology", true),
-            StudyTask("2", "Solve 10 Kinematics Equations & Graphs", "Physics", false),
-            StudyTask("3", "Memorize Periodic Table Trends & Electronegativity", "Chemistry", false),
-            StudyTask("4", "Practice Calculus Derivative Proofs", "Mathematics", false)
-        )
+        val initialList = mutableListOf<StudyTask>()
+        val jsonStr = taskPrefs.getString("saved_tasks_json", null)
+        if (!jsonStr.isNullOrBlank()) {
+            try {
+                val array = JSONArray(jsonStr)
+                for (i in 0 until array.length()) {
+                    val obj = array.getJSONObject(i)
+                    initialList.add(
+                        StudyTask(
+                            id = obj.getString("id"),
+                            title = obj.getString("title"),
+                            subject = obj.optString("subject", "General"),
+                            isCompleted = obj.optBoolean("isCompleted", false)
+                        )
+                    )
+                }
+            } catch (_: Exception) {}
+        }
+        if (initialList.isEmpty()) {
+            initialList.addAll(
+                listOf(
+                    StudyTask("1", "Read Chapter 4: Photosynthesis & Light Reactions", "Biology", true),
+                    StudyTask("2", "Solve 10 Kinematics Equations & Graphs", "Physics", false),
+                    StudyTask("3", "Memorize Periodic Table Trends & Electronegativity", "Chemistry", false),
+                    StudyTask("4", "Practice Calculus Derivative Proofs", "Mathematics", false)
+                )
+            )
+        }
+        mutableStateListOf<StudyTask>().apply { addAll(initialList) }
     }
     var newTaskTitle by remember { mutableStateOf("") }
     var newTaskSubject by remember { mutableStateOf("General") }
@@ -601,6 +647,7 @@ fun ToolsTab(
                                 .clickable {
                                     if (newTaskTitle.isNotBlank()) {
                                         studyTasks.add(StudyTask(System.currentTimeMillis().toString(), newTaskTitle, newTaskSubject, false))
+                                        saveTasksToPrefs(studyTasks)
                                         newTaskTitle = ""
                                     }
                                 },
@@ -626,6 +673,7 @@ fun ToolsTab(
                                         val idx = studyTasks.indexOfFirst { it.id == task.id }
                                         if (idx >= 0) {
                                             studyTasks[idx] = task.copy(isCompleted = !task.isCompleted)
+                                            saveTasksToPrefs(studyTasks)
                                         }
                                     }
                                     .padding(horizontal = 10.dp, vertical = 8.dp)
@@ -651,7 +699,10 @@ fun ToolsTab(
                                     )
                                 }
                                 IconButton(
-                                    onClick = { studyTasks.removeAll { it.id == task.id } },
+                                    onClick = {
+                                        studyTasks.removeAll { it.id == task.id }
+                                        saveTasksToPrefs(studyTasks)
+                                    },
                                     modifier = Modifier.size(24.dp)
                                 ) {
                                     Icon(Icons.Default.Close, contentDescription = "Delete", tint = colors.textTertiary, modifier = Modifier.size(14.dp))

@@ -14,11 +14,14 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -26,8 +29,12 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.util.lerp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.launch
+import kotlin.math.absoluteValue
 import com.example.data.api.GeminiSearchMode
 import com.example.data.model.NoteEntity
 import com.example.data.model.NoteSummary
@@ -71,8 +78,24 @@ fun HomeScreen(
     var showSplash by remember { mutableStateOf(true) }
     var currentScreen by remember { mutableStateOf<ActiveScreen>(ActiveScreen.Main(MainTab.HOME)) }
     var currentTab by remember { mutableStateOf(MainTab.HOME) }
+    val pagerState = rememberPagerState(initialPage = currentTab.ordinal) { MainTab.entries.size }
     var homeFilter by remember { mutableStateOf(QuickCategoryFilter.ALL) }
     var aiInitialPrompt by remember { mutableStateOf<String?>(null) }
+
+    // Sync pager -> currentTab when user swipes
+    LaunchedEffect(pagerState.currentPage) {
+        val tab = MainTab.entries[pagerState.currentPage]
+        if (currentTab != tab) {
+            currentTab = tab
+        }
+    }
+
+    // Sync currentTab -> pager when tab changes programmatically
+    LaunchedEffect(currentTab) {
+        if (pagerState.currentPage != currentTab.ordinal) {
+            pagerState.animateScrollToPage(currentTab.ordinal)
+        }
+    }
 
     val allNotes by viewModel.allNotes.collectAsStateWithLifecycle()
     val allNoteSummaries by viewModel.allNoteSummaries.collectAsStateWithLifecycle()
@@ -135,73 +158,93 @@ fun HomeScreen(
                 when (screen) {
                     is ActiveScreen.Main -> {
                         Box(modifier = Modifier.fillMaxSize()) {
-                            when (currentTab) {
-                                MainTab.HOME -> {
-                                    HomeTab(
-                                        notes = noteSummaries,
-                                        selectedFilter = homeFilter,
-                                        onFilterSelected = { homeFilter = it },
-                                        onNoteClick = { noteId -> openNote(noteId) },
-                                        onTogglePin = { noteId -> viewModel.togglePin(noteId) },
-                                        onOpenSearch = { currentScreen = ActiveScreen.Search },
-                                        onOpenSettings = { currentScreen = ActiveScreen.SettingsOverlay },
-                                        onOpenCreateNote = { createNewNote() },
-                                        onSeeAllClick = { currentTab = MainTab.LIBRARY },
-                                        onToggleTheme = {
-                                            val nextTheme = if (colors.isDark) "light" else "dark"
-                                            viewModel.setTheme(nextTheme)
+                            HorizontalPager(
+                                state = pagerState,
+                                modifier = Modifier.fillMaxSize(),
+                                userScrollEnabled = true,
+                                pageSpacing = 0.dp
+                            ) { page ->
+                                val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction).absoluteValue
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .graphicsLayer {
+                                            val scale = lerp(0.96f, 1.0f, 1f - pageOffset.coerceIn(0f, 1f))
+                                            val alpha = lerp(0.6f, 1.0f, 1f - pageOffset.coerceIn(0f, 1f))
+                                            scaleX = scale
+                                            scaleY = scale
+                                            this.alpha = alpha
                                         }
-                                    )
-                                }
-
-                                MainTab.LIBRARY -> {
-                                    LibraryTab(
-                                        notes = noteSummaries,
-                                        onNoteClick = { noteId -> openNote(noteId) },
-                                        onTogglePin = { noteId -> viewModel.togglePin(noteId) }
-                                    )
-                                }
-
-                                MainTab.AI -> {
-                                    AiAssistantTab(
-                                        initialPrompt = aiInitialPrompt
-                                    )
-                                }
-
-                                 MainTab.TOOLS -> {
-                                    ToolsTab(
-                                        notes = noteSummaries,
-                                        onOpenPdfReader = {
-                                            val pdfNote = allNotes.find { it.type == "pdf" } ?: allNotes.firstOrNull()
-                                            if (pdfNote != null) currentScreen = ActiveScreen.ReaderPdf(pdfNote)
-                                        },
-                                        onOpenHtmlViewer = {
-                                            val htmlNote = allNotes.find { it.type == "html" } ?: allNotes.firstOrNull()
-                                            if (htmlNote != null) currentScreen = ActiveScreen.ReaderHtml(htmlNote)
-                                        },
-                                        onOpenNoteEditor = { createNewNote() },
-                                        onOpenBookmarks = {
-                                            currentTab = MainTab.LIBRARY
-                                        },
-                                        onOpenNote = { noteId -> openNote(noteId) },
-                                        onAddNote = { title, content, type, category ->
-                                            viewModel.addNoteDirect(title, content, type, category)
+                                ) {
+                                    when (MainTab.entries[page]) {
+                                        MainTab.HOME -> {
+                                            HomeTab(
+                                                notes = noteSummaries,
+                                                selectedFilter = homeFilter,
+                                                onFilterSelected = { homeFilter = it },
+                                                onNoteClick = { noteId -> openNote(noteId) },
+                                                onTogglePin = { noteId -> viewModel.togglePin(noteId) },
+                                                onOpenSearch = { currentScreen = ActiveScreen.Search },
+                                                onOpenSettings = { currentScreen = ActiveScreen.SettingsOverlay },
+                                                onOpenCreateNote = { createNewNote() },
+                                                onSeeAllClick = { currentTab = MainTab.LIBRARY },
+                                                onToggleTheme = {
+                                                    val nextTheme = if (colors.isDark) "light" else "dark"
+                                                    viewModel.setTheme(nextTheme)
+                                                }
+                                            )
                                         }
-                                    )
-                                }
 
-                                MainTab.PROFILE -> {
-                                    ProfileTab(
-                                        notes = noteSummaries,
-                                        onOpenMyNotes = { currentTab = MainTab.LIBRARY },
-                                        onOpenFavorites = {
-                                            currentTab = MainTab.HOME
-                                            homeFilter = QuickCategoryFilter.FAVORITES
-                                        },
-                                        onOpenTrash = {
-                                            currentTab = MainTab.LIBRARY
+                                        MainTab.LIBRARY -> {
+                                            LibraryTab(
+                                                notes = noteSummaries,
+                                                onNoteClick = { noteId -> openNote(noteId) },
+                                                onTogglePin = { noteId -> viewModel.togglePin(noteId) }
+                                            )
                                         }
-                                    )
+
+                                        MainTab.AI -> {
+                                            AiAssistantTab(
+                                                initialPrompt = aiInitialPrompt
+                                            )
+                                        }
+
+                                        MainTab.TOOLS -> {
+                                            ToolsTab(
+                                                notes = noteSummaries,
+                                                onOpenPdfReader = {
+                                                    val pdfNote = allNotes.find { it.type == "pdf" } ?: allNotes.firstOrNull()
+                                                    if (pdfNote != null) currentScreen = ActiveScreen.ReaderPdf(pdfNote)
+                                                },
+                                                onOpenHtmlViewer = {
+                                                    val htmlNote = allNotes.find { it.type == "html" } ?: allNotes.firstOrNull()
+                                                    if (htmlNote != null) currentScreen = ActiveScreen.ReaderHtml(htmlNote)
+                                                },
+                                                onOpenNoteEditor = { createNewNote() },
+                                                onOpenBookmarks = {
+                                                    currentTab = MainTab.LIBRARY
+                                                },
+                                                onOpenNote = { noteId -> openNote(noteId) },
+                                                onAddNote = { title, content, type, category ->
+                                                    viewModel.addNoteDirect(title, content, type, category)
+                                                }
+                                            )
+                                        }
+
+                                        MainTab.PROFILE -> {
+                                            ProfileTab(
+                                                notes = noteSummaries,
+                                                onOpenMyNotes = { currentTab = MainTab.LIBRARY },
+                                                onOpenFavorites = {
+                                                    currentTab = MainTab.HOME
+                                                    homeFilter = QuickCategoryFilter.FAVORITES
+                                                },
+                                                onOpenTrash = {
+                                                    currentTab = MainTab.LIBRARY
+                                                }
+                                            )
+                                        }
+                                    }
                                 }
                             }
 
@@ -211,8 +254,11 @@ fun HomeScreen(
                             NotesBottomBar(
                                 currentTab = currentTab,
                                 onTabSelected = { tab ->
-                                    currentTab = tab
-                                    aiInitialPrompt = null
+                                    coroutineScope.launch {
+                                        currentTab = tab
+                                        aiInitialPrompt = null
+                                        pagerState.animateScrollToPage(tab.ordinal)
+                                    }
                                 },
                                 modifier = Modifier
                                     .align(Alignment.BottomCenter)
@@ -286,7 +332,9 @@ fun HomeScreen(
                             onImportBackup = { },
                             onShowAboutSplash = { showSplash = true },
                             onBack = { currentScreen = ActiveScreen.Main(currentTab) },
-                            onSyncFullDevice = { viewModel.syncFullDevice() }
+                            onSyncFullDevice = { viewModel.syncFullDevice() },
+                            geminiApiKey = settings.geminiApiKey,
+                            onUpdateApiKey = { key -> viewModel.setGeminiApiKey(key) }
                         )
                     }
                 }

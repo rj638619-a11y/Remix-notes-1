@@ -135,7 +135,6 @@ fun ThemeToggleIconButton(
     isDark: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
-    onOpenVault: (() -> Unit)? = null,
     size: Dp = 38.dp,
     iconSize: Dp = 19.dp
 ) {
@@ -145,8 +144,6 @@ fun ThemeToggleIconButton(
     val themeTransition = LocalThemeTransition.current
 
     var buttonCenter by remember { mutableStateOf(Offset.Unspecified) }
-    var holdProgress by remember { mutableFloatStateOf(0f) }
-    var isHolding by remember { mutableStateOf(false) }
 
     val rotation by animateFloatAsState(
         targetValue = if (isDark) 180f else 0f,
@@ -157,7 +154,6 @@ fun ThemeToggleIconButton(
         label = "theme_rotation"
     )
 
-    val currentOnOpenVault by rememberUpdatedState(onOpenVault)
     val currentOnClick by rememberUpdatedState(onClick)
 
     Box(
@@ -171,76 +167,23 @@ fun ThemeToggleIconButton(
             }
             .clip(CircleShape)
             .background(colors.field)
-            .pointerInput(Unit) {
-                val requiredHoldMs = 3000L
-                coroutineScope {
-                    while (true) {
-                        awaitPointerEventScope {
-                            awaitFirstDown(requireUnconsumed = false)
-                            val downTime = System.currentTimeMillis()
-                            isHolding = true
-                            holdProgress = 0f
-                            var triggeredVault = false
-
-                            val timerJob = launch {
-                                val startTime = System.currentTimeMillis()
-                                while (isActive) {
-                                    val elapsed = System.currentTimeMillis() - startTime
-                                    holdProgress = (elapsed.toFloat() / requiredHoldMs).coerceIn(0f, 1f)
-                                    if (elapsed >= requiredHoldMs) {
-                                        triggeredVault = true
-                                        VibrationHelper.vibratePattern(context, longArrayOf(0, 100, 60, 250))
-                                        currentOnOpenVault?.invoke()
-                                        break
-                                    }
-                                    delay(16L)
-                                }
-                            }
-
-                            val up = waitForUpOrCancellation()
-                            timerJob.cancel()
-                            val duration = System.currentTimeMillis() - downTime
-                            isHolding = false
-                            holdProgress = 0f
-
-                            if (up != null && !triggeredVault) {
-                                if (duration < 600L) {
-                                    VibrationHelper.click(context)
-                                    val origin = if (buttonCenter.isSpecified) buttonCenter else Offset(800f, 150f)
-                                    themeTransition.prepareTransition(origin, view, colors.bg)
-                                    currentOnClick()
-                                }
-                            }
-                        }
-                    }
-                }
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(bounded = true)
+            ) {
+                VibrationHelper.click(context)
+                val origin = if (buttonCenter.isSpecified) buttonCenter else Offset(800f, 150f)
+                themeTransition.prepareTransition(origin, view, colors.bg)
+                currentOnClick()
             }
-            .padding((size - iconSize) / 2),
+            .size(size),
         contentAlignment = Alignment.Center
     ) {
-        if (isHolding && holdProgress > 0.04f) {
-            Canvas(modifier = Modifier.matchParentSize()) {
-                val strokeW = 2.5.dp.toPx()
-                drawArc(
-                    color = Color(0xFFFFB74D).copy(alpha = 0.9f),
-                    startAngle = -90f,
-                    sweepAngle = holdProgress * 360f,
-                    useCenter = false,
-                    style = Stroke(width = strokeW, cap = StrokeCap.Round)
-                )
-            }
-        }
-
         Crossfade(
             targetState = isDark,
             animationSpec = tween(240, easing = FastOutSlowInEasing),
             modifier = Modifier.graphicsLayer {
                 rotationZ = rotation
-                if (isHolding) {
-                    val scale = 1f + (holdProgress * 0.12f)
-                    scaleX = scale
-                    scaleY = scale
-                }
             },
             label = "theme_crossfade"
         ) { dark ->

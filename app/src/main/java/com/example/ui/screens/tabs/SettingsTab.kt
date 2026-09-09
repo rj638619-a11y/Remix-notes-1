@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.PhotoSizeSelectActual
@@ -40,10 +41,16 @@ import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.StarRate
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -60,9 +67,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.api.GeminiClient
 import com.example.ui.components.NotesAppLogoIcon
 import com.example.ui.theme.GlassTheme
 
@@ -75,11 +86,14 @@ fun SettingsTab(
     onShowAboutSplash: () -> Unit,
     onBack: (() -> Unit)? = null,
     onSyncFullDevice: (() -> Unit)? = null,
+    geminiApiKey: String = "",
+    onUpdateApiKey: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val colors = GlassTheme.colors
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
     val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val clipboardManager = LocalClipboardManager.current
 
     var autoSaveEnabled by remember { mutableStateOf(true) }
     var showThumbnails by remember { mutableStateOf(true) }
@@ -88,6 +102,9 @@ fun SettingsTab(
     var selectedReadingMode by remember { mutableStateOf("Standard") }
     var showInfoAlert by remember { mutableStateOf<String?>(null) }
     var showExportSuccess by remember { mutableStateOf(false) }
+    var showApiKeyDialog by remember { mutableStateOf(false) }
+    var apiKeyDraft by remember(geminiApiKey) { mutableStateOf(geminiApiKey) }
+    var isKeyVisible by remember { mutableStateOf(false) }
 
     Box(modifier = modifier.fillMaxSize()) {
         LazyColumn(
@@ -170,6 +187,30 @@ fun SettingsTab(
                         title = "Default Reader Theme",
                         value = selectedReadingMode,
                         onClick = { showReadingModeDialog = true }
+                    )
+                }
+            }
+
+            // Section 1.5: Google Gemini AI & Manual API Key
+            item {
+                SettingsGroupCard(title = "Google Gemini AI") {
+                    val isKeySet = geminiApiKey.isNotBlank() && GeminiClient.isValidGeminiApiKey(geminiApiKey)
+                    val displayKeyText = if (geminiApiKey.isNotBlank()) {
+                        "${geminiApiKey.take(6)}••••••••"
+                    } else {
+                        "Not Set (Tap to add key)"
+                    }
+
+                    SettingsRowItem(
+                        icon = Icons.Default.Key,
+                        iconTint = if (isKeySet) Color(0xFF10B981) else colors.pastelOrange,
+                        iconBg = if (isKeySet) Color(0xFF10B981).copy(alpha = 0.15f) else colors.pastelOrangeBg,
+                        title = "Manual Gemini API Key",
+                        value = displayKeyText,
+                        onClick = {
+                            apiKeyDraft = geminiApiKey
+                            showApiKeyDialog = true
+                        }
                     )
                 }
             }
@@ -409,6 +450,107 @@ fun SettingsTab(
             confirmButton = {
                 TextButton(onClick = { showInfoAlert = null }) {
                     Text("OK", fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = colors.card,
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
+    // Manual API Key Dialog
+    if (showApiKeyDialog) {
+        AlertDialog(
+            onDismissRequest = { showApiKeyDialog = false },
+            title = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Key,
+                        contentDescription = null,
+                        tint = colors.pastelLavender
+                    )
+                    Text(
+                        text = "Manual Gemini API Key",
+                        fontWeight = FontWeight.Bold,
+                        color = colors.text
+                    )
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Enter your personal Google Gemini API key to activate AI features. Your key is stored locally on your device and is NOT embedded in the app.",
+                        fontSize = 13.sp,
+                        color = colors.textSecondary
+                    )
+
+                    OutlinedTextField(
+                        value = apiKeyDraft,
+                        onValueChange = { apiKeyDraft = it },
+                        label = { Text("Gemini API Key") },
+                        placeholder = { Text("AIzaSy...") },
+                        singleLine = true,
+                        visualTransformation = if (isKeyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { isKeyVisible = !isKeyVisible }) {
+                                Icon(
+                                    imageVector = if (isKeyVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = "Toggle Visibility",
+                                    tint = colors.textSecondary
+                                )
+                            }
+                        },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colors.pastelLavender,
+                            focusedTextColor = colors.text,
+                            unfocusedTextColor = colors.text
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = {
+                                val clipText = clipboardManager.getText()?.text
+                                if (!clipText.isNullOrBlank()) {
+                                    apiKeyDraft = clipText.trim()
+                                }
+                            }
+                        ) {
+                            Text("Paste Clipboard", fontSize = 12.sp)
+                        }
+
+                        if (apiKeyDraft.isNotBlank()) {
+                            TextButton(
+                                onClick = { apiKeyDraft = "" }
+                            ) {
+                                Text("Clear Key", fontSize = 12.sp, color = colors.pastelPdfRed)
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showApiKeyDialog = false
+                        onUpdateApiKey(apiKeyDraft)
+                        showInfoAlert = if (apiKeyDraft.isBlank()) "API key cleared." else "Manual Gemini API key saved!"
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.pastelLavender)
+                ) {
+                    Text("Save API Key", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showApiKeyDialog = false }) {
+                    Text("Cancel")
                 }
             },
             containerColor = colors.card,

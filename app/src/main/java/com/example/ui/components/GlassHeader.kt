@@ -119,7 +119,6 @@ fun GlassHeader(
     onOpenGemini: (query: String, mode: GeminiSearchMode) -> Unit,
     readerMode: String,
     onReaderModeChange: (String) -> Unit,
-    onOpenVault: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val colors = GlassTheme.colors
@@ -188,7 +187,6 @@ fun GlassHeader(
                         ThemeToggleIconButton(
                             isDark = colors.isDark,
                             onClick = onToggleTheme,
-                            onOpenVault = onOpenVault,
                             size = 36.dp,
                             iconSize = 18.dp
                         )
@@ -266,7 +264,6 @@ fun GlassHeader(
                         ThemeToggleIconButton(
                             isDark = colors.isDark,
                             onClick = onToggleTheme,
-                            onOpenVault = onOpenVault,
                             size = 34.dp,
                             iconSize = 16.dp
                         )

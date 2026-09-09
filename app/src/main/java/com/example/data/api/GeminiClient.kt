@@ -35,29 +35,83 @@ data class GeminiResult(
 )
 
 object GeminiClient {
-    // Exclusively Gemini 3 Frontier Models
-    val MODELS_TO_TRY = listOf(
-        "gemini-3.8-flash",
-        "gemini-3.7-flash",
-        "gemini-3.6-flash",
-        "gemini-3.5-flash",
-        "gemini-3.5-flash-lite",
-        "gemini-3.1-flash-lite",
-        "gemini-3-flash-preview",
-        "gemini-3.1-pro-preview"
+    val FALLBACK_MODELS = listOf(
+        "gemini-2.0-flash",
+        "gemini-1.5-flash",
+        "gemini-1.5-pro"
     )
 
+    var cachedLiveModels: List<String> = emptyList()
+    private var lastModelsFetchTime: Long = 0L
+    private const val CACHE_TTL_MS = 24 * 60 * 60 * 1000L // 24 hours
+
+    val MODELS_TO_TRY: List<String>
+        get() = if (cachedLiveModels.isNotEmpty()) cachedLiveModels else FALLBACK_MODELS
+
+    suspend fun fetchLiveModels(customKey: String? = null): List<String> = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        if (cachedLiveModels.isNotEmpty() && (now - lastModelsFetchTime) < CACHE_TTL_MS) {
+            return@withContext cachedLiveModels
+        }
+        val apiKey = getApiKey(customKey)
+        if (apiKey.isBlank()) {
+            cachedLiveModels = FALLBACK_MODELS
+            return@withContext FALLBACK_MODELS
+        }
+        try {
+            val url = "https://generativelanguage.googleapis.com/v1beta/models?key=$apiKey"
+            val request = Request.Builder().url(url).build()
+            val response = httpClient.newCall(request).execute()
+            if (response.isSuccessful) {
+                val body = response.body?.string() ?: ""
+                val json = JSONObject(body)
+                val modelsArray = json.optJSONArray("models")
+                val parsedList = mutableListOf<String>()
+                if (modelsArray != null) {
+                    for (i in 0 until modelsArray.length()) {
+                        val m = modelsArray.optJSONObject(i)
+                        val name = m?.optString("name") ?: ""
+                        val supportedMethods = m?.optJSONArray("supportedGenerationMethods")
+                        var supportsGenerate = false
+                        if (supportedMethods != null) {
+                            for (j in 0 until supportedMethods.length()) {
+                                if (supportedMethods.optString(j) == "generateContent") {
+                                    supportsGenerate = true
+                                    break
+                                }
+                            }
+                        }
+                        if (supportsGenerate && name.isNotBlank()) {
+                            val cleanName = name.removePrefix("models/").removePrefix("publishers/google/models/")
+                            if (!parsedList.contains(cleanName)) {
+                                parsedList.add(cleanName)
+                            }
+                        }
+                    }
+                }
+                if (parsedList.isNotEmpty()) {
+                    cachedLiveModels = parsedList
+                    lastModelsFetchTime = now
+                    return@withContext parsedList
+                }
+            }
+        } catch (_: Exception) {}
+
+        cachedLiveModels = FALLBACK_MODELS
+        return@withContext FALLBACK_MODELS
+    }
+
     fun getModelDisplayName(modelName: String): String {
-        return when (modelName) {
-            "gemini-3.8-flash" -> "Gemini 3.8 Flash"
-            "gemini-3.7-flash" -> "Gemini 3.7 Flash"
-            "gemini-3.6-flash" -> "Gemini 3.6 Flash"
-            "gemini-3.5-flash" -> "Gemini 3.5 Flash"
-            "gemini-3.5-flash-lite" -> "Gemini 3.5 Flash Lite"
-            "gemini-3.1-flash-lite" -> "Gemini 3.1 Flash Lite"
-            "gemini-3-flash-preview" -> "Gemini 3 Flash Preview"
-            "gemini-3.1-pro-preview" -> "Gemini 3.1 Pro Preview"
-            else -> modelName
+        val clean = modelName.removePrefix("models/").removePrefix("publishers/google/models/")
+        return clean.split("-", "_").joinToString(" ") { word ->
+            when (word.lowercase()) {
+                "gemini" -> "Gemini"
+                "flash" -> "Flash"
+                "pro" -> "Pro"
+                "lite" -> "Lite"
+                "preview" -> "Preview"
+                else -> word.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+            }
         }
     }
 
@@ -99,14 +153,6 @@ object GeminiClient {
             for (p in parts) {
                 if (!keys.contains(p)) keys.add(p)
             }
-        }
-        val buildKey = try { sanitizeApiKey(BuildConfig.GEMINI_API_KEY) } catch (_: Exception) { "" }
-        if (isValidGeminiApiKey(buildKey) && !keys.contains(buildKey)) {
-            keys.add(buildKey)
-        }
-        val envKey = sanitizeApiKey(System.getenv("GEMINI_API_KEY"))
-        if (isValidGeminiApiKey(envKey) && !keys.contains(envKey)) {
-            keys.add(envKey)
         }
         return keys
     }

@@ -26,6 +26,8 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -59,10 +61,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,6 +83,7 @@ import com.example.data.model.NoteEntity
 import com.example.ui.components.PhotosynthesisDiagram
 import com.example.ui.theme.GlassTheme
 import com.example.ui.util.AmbientBackground
+import kotlinx.coroutines.launch
 
 enum class ReaderSegmentTab {
     READ, INFO, BOOKMARKS
@@ -108,11 +113,26 @@ fun HtmlNoteReaderScreen(
     var showTocDialog by remember { mutableStateOf(false) }
     var isFullScreen by remember { mutableStateOf(false) }
 
-    // Reading Mode Colors
+    // Reading Mode Colors with high-contrast text guarantee
     val (readerBg, readerTx, readerCardBg) = when (readingMode) {
-        ReadingThemeMode.LIGHT -> Triple(colors.bg, colors.text, colors.card)
-        ReadingThemeMode.SEPIA -> Triple(Color(0xFFFBF0D9), Color(0xFF382A1B), Color(0xFFF4E5C6))
-        ReadingThemeMode.DARK -> Triple(Color(0xFF141618), Color(0xFFE8EAEF), Color(0xFF1F2226))
+        ReadingThemeMode.LIGHT -> Triple(Color(0xFFF8F9FA), Color(0xFF111827), Color(0xFFFFFFFF))
+        ReadingThemeMode.SEPIA -> Triple(Color(0xFFFAF4E8), Color(0xFF2C1D11), Color(0xFFF3E9D7))
+        ReadingThemeMode.DARK -> Triple(Color(0xFF0F172A), Color(0xFFF8FAFC), Color(0xFF1E293B))
+    }
+
+    val readerPagerState = rememberPagerState(initialPage = activeSegment.ordinal) { ReaderSegmentTab.entries.size }
+    val readerScope = rememberCoroutineScope()
+
+    // Sync pager -> activeSegment
+    LaunchedEffect(readerPagerState.currentPage) {
+        activeSegment = ReaderSegmentTab.entries[readerPagerState.currentPage]
+    }
+
+    // Sync activeSegment -> pager
+    LaunchedEffect(activeSegment) {
+        if (readerPagerState.currentPage != activeSegment.ordinal) {
+            readerPagerState.animateScrollToPage(activeSegment.ordinal)
+        }
     }
 
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -293,11 +313,11 @@ fun HtmlNoteReaderScreen(
                             ReaderSegmentTab.entries.forEach { tab ->
                                 val isSelected = activeSegment == tab
                                 val pillBg by animateColorAsState(
-                                    targetValue = if (isSelected) readerCardBg else Color.Transparent,
+                                    targetValue = if (isSelected) colors.pastelBlue else Color.Transparent,
                                     label = "seg_bg"
                                 )
                                 val pillTx by animateColorAsState(
-                                    targetValue = if (isSelected) colors.pastelBlue else readerTx.copy(alpha = 0.6f),
+                                    targetValue = if (isSelected) Color.White else readerTx.copy(alpha = 0.75f),
                                     label = "seg_tx"
                                 )
 
@@ -306,7 +326,12 @@ fun HtmlNoteReaderScreen(
                                         .shadow(if (isSelected) 3.dp else 0.dp, RoundedCornerShape(16.dp), ambientColor = colors.shadow)
                                         .clip(RoundedCornerShape(16.dp))
                                         .background(pillBg)
-                                        .clickable { activeSegment = tab }
+                                        .clickable {
+                                            readerScope.launch {
+                                                activeSegment = tab
+                                                readerPagerState.animateScrollToPage(tab.ordinal)
+                                            }
+                                        }
                                         .padding(horizontal = 20.dp, vertical = 7.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -367,193 +392,195 @@ fun HtmlNoteReaderScreen(
                 }
             }
 
-            // 3. Content View depending on active segment
-            when (activeSegment) {
-                ReaderSegmentTab.READ -> {
-                    LazyColumn(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = navBarBottom + 100.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        // Title header inside reader
-                        item {
-                            Column {
-                                Text(
-                                    text = note.displayTitle,
-                                    fontSize = (24 * fontSizeMultiplier).sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = readerTx,
-                                    letterSpacing = (-0.5).sp
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "${note.category ?: "Study Note"} • 18 pages • Formatted HTML",
-                                    fontSize = 13.sp,
-                                    color = colors.textSecondary
-                                )
-                            }
-                        }
-
-                        // Embedded educational diagram (Photosynthesis or scientific schematic)
-                        item {
-                            PhotosynthesisDiagram()
-                        }
-
-                        // Key Formula / Highlight Card
-                        item {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .shadow(4.dp, RoundedCornerShape(18.dp), ambientColor = colors.shadow)
-                                    .clip(RoundedCornerShape(18.dp))
-                                    .background(colors.pastelMintBg)
-                                    .border(1.dp, colors.pastelMint.copy(alpha = 0.3f), RoundedCornerShape(18.dp))
-                                    .padding(16.dp)
-                            ) {
-                                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            // 3. Content View using HorizontalPager for smooth swiping between tabs
+            HorizontalPager(
+                state = readerPagerState,
+                modifier = Modifier
+                    .weight(1f)
+                    .fillMaxWidth(),
+                userScrollEnabled = true
+            ) { page ->
+                when (ReaderSegmentTab.entries[page]) {
+                    ReaderSegmentTab.READ -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = navBarBottom + 100.dp),
+                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            // Title header inside reader
+                            item {
+                                Column {
                                     Text(
-                                        text = "⚡ Key Chemical Equation",
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = colors.pastelMint
+                                        text = note.displayTitle,
+                                        fontSize = (24 * fontSizeMultiplier).sp,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        color = readerTx,
+                                        letterSpacing = (-0.5).sp
                                     )
+                                    Spacer(modifier = Modifier.height(4.dp))
                                     Text(
-                                        text = "6CO₂ + 6H₂O + Sunlight ➔ C₆H₁₂O₆ + 6O₂",
-                                        fontSize = (15 * fontSizeMultiplier).sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontFamily = FontFamily.Monospace,
-                                        color = readerTx
+                                        text = "${note.category ?: "Study Note"} • 18 pages • Formatted HTML",
+                                        fontSize = 13.sp,
+                                        color = colors.textSecondary
                                     )
                                 }
                             }
-                        }
 
-                        // Formatted Chapter 1
-                        item {
-                            ChapterSection(
-                                number = "1",
-                                title = "Introduction & Overview",
-                                content = "Photosynthesis is the foundational biochemical process supporting virtually all life on Earth. Green plants and autotrophs absorb solar radiation to convert inorganic carbon dioxide and water into chemical energy in the form of hexose sugars.",
-                                fontSizeMultiplier = fontSizeMultiplier,
-                                readerTx = readerTx
-                            )
-                        }
+                            // Embedded educational diagram (Photosynthesis or scientific schematic)
+                            item {
+                                PhotosynthesisDiagram()
+                            }
 
-                        // Formatted Chapter 2
-                        item {
-                            ChapterSection(
-                                number = "2",
-                                title = "Two Stages of Reactions",
-                                content = "1. Light-Dependent Reactions: Carried out in the thylakoid membranes, solar photons split H₂O molecules (photolysis) generating high-energy ATP, NADPH, and discharging breathable O₂.\n\n2. Light-Independent Reactions (Calvin Cycle): In the chloroplast stroma, enzyme RuBisCO facilitates carbon fixation into 3-phosphoglycerate, creating stable glucose molecules.",
-                                fontSizeMultiplier = fontSizeMultiplier,
-                                readerTx = readerTx
-                            )
-                        }
-
-                        // Formatted Chapter 3
-                        item {
-                            ChapterSection(
-                                number = "3",
-                                title = "Limiting Factors & Ecological Impact",
-                                content = "Blackman's Law determines the rate of photosynthetic activity based on light irradiance, temperature spectrum (20°C - 35°C optimum), and ambient CO₂ ppm concentration.",
-                                fontSizeMultiplier = fontSizeMultiplier,
-                                readerTx = readerTx
-                            )
-                        }
-                    }
-                }
-
-                ReaderSegmentTab.INFO -> {
-                    // Document & Reading Metadata
-                    LazyColumn(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        contentPadding = PaddingValues(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        item {
-                            Text(
-                                text = "Document Information",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = readerTx
-                            )
-                        }
-
-                        item {
-                            InfoStatRow(label = "Subject Category", value = note.category ?: "General")
-                        }
-                        item {
-                            InfoStatRow(label = "Format", value = note.type.uppercase())
-                        }
-                        item {
-                            InfoStatRow(label = "Word Count", value = "${note.wordCount} words")
-                        }
-                        item {
-                            InfoStatRow(label = "Estimated Reading Time", value = "${note.readingTimeMin} minutes")
-                        }
-                        item {
-                            InfoStatRow(label = "Last Modified", value = note.relativeTimeAgo)
-                        }
-                        item {
-                            InfoStatRow(label = "Estimated File Size", value = "18 pages (~4.2 MB)")
-                        }
-                    }
-                }
-
-                ReaderSegmentTab.BOOKMARKS -> {
-                    // Bookmarked quotes & sections
-                    val bookmarks = listOf(
-                        "6CO₂ + 6H₂O + Sunlight ➔ C₆H₁₂O₆ + 6O₂",
-                        "Light-Dependent Reactions occur in thylakoid membranes releasing O₂.",
-                        "RuBisCO fixes atmospheric CO₂ into 3-PGA in the stroma (Calvin Cycle)."
-                    )
-
-                    LazyColumn(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxWidth(),
-                        contentPadding = PaddingValues(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        item {
-                            Text(
-                                text = "Bookmarked Quotes & Takeaways",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = readerTx
-                            )
-                        }
-
-                        items(bookmarks) { quote ->
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .shadow(2.dp, RoundedCornerShape(16.dp), ambientColor = colors.shadow)
-                                    .clip(RoundedCornerShape(16.dp))
-                                    .background(readerCardBg)
-                                    .border(1.dp, colors.glassBorder, RoundedCornerShape(16.dp))
-                                    .padding(16.dp)
-                            ) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                    verticalAlignment = Alignment.Top
+                            // Key Formula / Highlight Card
+                            item {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .shadow(4.dp, RoundedCornerShape(18.dp), ambientColor = colors.shadow)
+                                        .clip(RoundedCornerShape(18.dp))
+                                        .background(if (readingMode == ReadingThemeMode.DARK) Color(0xFF1E3A2B) else Color(0xFFE8F7EC))
+                                        .border(1.dp, colors.pastelMint.copy(alpha = 0.3f), RoundedCornerShape(18.dp))
+                                        .padding(16.dp)
                                 ) {
-                                    Icon(
-                                        imageVector = Icons.Default.Bookmark,
-                                        contentDescription = null,
-                                        tint = colors.pastelFavYellow,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                    Text(
-                                        text = quote,
-                                        fontSize = 14.sp,
-                                        color = readerTx,
-                                        lineHeight = 20.sp
-                                    )
+                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text(
+                                            text = "⚡ Key Chemical Equation",
+                                            fontSize = 14.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (readingMode == ReadingThemeMode.DARK) Color(0xFF4ADE80) else Color(0xFF15803D)
+                                        )
+                                        Text(
+                                            text = "6CO₂ + 6H₂O + Sunlight ➔ C₆H₁₂O₆ + 6O₂",
+                                            fontSize = (15 * fontSizeMultiplier).sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                            fontFamily = FontFamily.Monospace,
+                                            color = readerTx
+                                        )
+                                    }
+                                }
+                            }
+
+                            // Formatted Chapter 1
+                            item {
+                                ChapterSection(
+                                    number = "1",
+                                    title = "Introduction & Overview",
+                                    content = "Photosynthesis is the foundational biochemical process supporting virtually all life on Earth. Green plants and autotrophs absorb solar radiation to convert inorganic carbon dioxide and water into chemical energy in the form of hexose sugars.",
+                                    fontSizeMultiplier = fontSizeMultiplier,
+                                    readerTx = readerTx
+                                )
+                            }
+
+                            // Formatted Chapter 2
+                            item {
+                                ChapterSection(
+                                    number = "2",
+                                    title = "Two Stages of Reactions",
+                                    content = "1. Light-Dependent Reactions: Carried out in the thylakoid membranes, solar photons split H₂O molecules (photolysis) generating high-energy ATP, NADPH, and discharging breathable O₂.\n\n2. Light-Independent Reactions (Calvin Cycle): In the chloroplast stroma, enzyme RuBisCO facilitates carbon fixation into 3-phosphoglycerate, creating stable glucose molecules.",
+                                    fontSizeMultiplier = fontSizeMultiplier,
+                                    readerTx = readerTx
+                                )
+                            }
+
+                            // Formatted Chapter 3
+                            item {
+                                ChapterSection(
+                                    number = "3",
+                                    title = "Limiting Factors & Ecological Impact",
+                                    content = "Blackman's Law determines the rate of photosynthetic activity based on light irradiance, temperature spectrum (20°C - 35°C optimum), and ambient CO₂ ppm concentration.",
+                                    fontSizeMultiplier = fontSizeMultiplier,
+                                    readerTx = readerTx
+                                )
+                            }
+                        }
+                    }
+
+                    ReaderSegmentTab.INFO -> {
+                        // Document & Reading Metadata
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            item {
+                                Text(
+                                    text = "Document Information",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = readerTx
+                                )
+                            }
+
+                            item {
+                                InfoStatRow(label = "Subject Category", value = note.category ?: "General")
+                            }
+                            item {
+                                InfoStatRow(label = "Format", value = note.type.uppercase())
+                            }
+                            item {
+                                InfoStatRow(label = "Word Count", value = "${note.wordCount} words")
+                            }
+                            item {
+                                InfoStatRow(label = "Estimated Reading Time", value = "${note.readingTimeMin} minutes")
+                            }
+                            item {
+                                InfoStatRow(label = "Last Modified", value = note.relativeTimeAgo)
+                            }
+                            item {
+                                InfoStatRow(label = "Estimated File Size", value = "18 pages (~4.2 MB)")
+                            }
+                        }
+                    }
+
+                    ReaderSegmentTab.BOOKMARKS -> {
+                        // Bookmarked quotes & sections
+                        val bookmarks = listOf(
+                            "6CO₂ + 6H₂O + Sunlight ➔ C₆H₁₂O₆ + 6O₂",
+                            "Light-Dependent Reactions occur in thylakoid membranes releasing O₂.",
+                            "RuBisCO fixes atmospheric CO₂ into 3-PGA in the stroma (Calvin Cycle)."
+                        )
+
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(20.dp),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            item {
+                                Text(
+                                    text = "Bookmarked Quotes & Takeaways",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = readerTx
+                                )
+                            }
+
+                            items(bookmarks) { quote ->
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .shadow(2.dp, RoundedCornerShape(16.dp), ambientColor = colors.shadow)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(readerCardBg)
+                                        .border(1.dp, colors.glassBorder, RoundedCornerShape(16.dp))
+                                        .padding(16.dp)
+                                ) {
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                        verticalAlignment = Alignment.Top
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Bookmark,
+                                            contentDescription = null,
+                                            tint = colors.pastelFavYellow,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text(
+                                            text = quote,
+                                            fontSize = 14.sp,
+                                            color = readerTx,
+                                            lineHeight = 20.sp
+                                        )
+                                    }
                                 }
                             }
                         }

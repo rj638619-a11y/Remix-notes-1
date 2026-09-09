@@ -79,9 +79,11 @@ fun HtmlPreviewView(
                         displayZoomControls = false
                         textZoom = ((fontSize / 16f) * 100).toInt().coerceIn(60, 200)
                         defaultTextEncodingName = "utf-8"
-                        mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
-                        allowFileAccess = true
-                        allowContentAccess = true
+                        mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                        allowFileAccess = false
+                        allowContentAccess = false
+                        allowFileAccessFromFileURLs = false
+                        allowUniversalAccessFromFileURLs = false
                     }
 
                     webViewClient = object : WebViewClient() {
