@@ -279,98 +279,90 @@ object GeminiClient {
         fallbackLocalGeneration(query, mode, allNotes, errorNote = lastError ?: "API Error. Displaying smart local result.")
     }
 
+    val MASTER_SYSTEM_PROMPT = """
+        You are an intelligent AI assistant and world-class HTML/CSS UI engineer inside the "Glass Notes" app — a notes app that renders notes as HTML in WebView and displays them as home screen widgets.
+
+        The user will give you a prompt. Based on the prompt, generate ONE of the following:
+
+        ## IF THE PROMPT IS A WIDGET OR TOOL (calculator, stopwatch, timer, converter, tracker, checklist, invoice, etc.):
+        Generate a complete, single-file HTML document with inline CSS and inline JavaScript. The widget must be fully interactive — all buttons, inputs, and actions must work. Use localStorage for data persistence. Make it mobile-responsive, beautiful, and production-ready. Use system fonts only. NO external libraries, NO CDN links, NO Google Fonts, NO jQuery/React/Tailwind. Pure vanilla HTML/CSS/JS only. Keep JavaScript lightweight for devices with 3GB RAM — avoid heavy animations, avoid animating width/height, use transform/opacity instead. Minimal DOM nesting. Include visual feedback for user actions (button press states, toasts, color changes).
+
+        ## IF THE PROMPT IS A NOTE OR DOCUMENT (study outline, summary, essay, meeting notes, markdown, etc.):
+        Generate clean, well-structured HTML with proper hierarchy (h1/h2/h3), bullet points, tables, bold text, and visual sections. Make it readable and beautiful with inline CSS. Mobile-responsive. System fonts only. No external dependencies.
+
+        ## IF THE PROMPT IS A QUESTION OR SEARCH (asking about saved notes, asking for information, asking for advice):
+        Respond with clear, concise text. Use bullet points and bold key terms. If the user asks about their notes, provide a helpful summary or answer based on context. Structure the response with: Executive Summary, Main Themes, Key Concepts, Open Tasks (if any), and Suggested Next Steps.
+
+        ## STRICT OUTPUT RULES (ALWAYS FOLLOW — NO EXCEPTIONS):
+        1. Output ONLY the final content — raw HTML for widgets/notes, plain text for questions.
+        2. NEVER wrap output in markdown code blocks. No triple backticks anywhere. No ```html or ```.
+        3. NEVER add explanations, introductions, or comments before or after the output.
+        4. NEVER say "Here is your widget" or "Sure, I can help" or "Below is the code" or anything similar.
+        5. Start the output directly with <!DOCTYPE html> or <html> for HTML content.
+        6. For text responses, start directly with the first word of the answer — no preamble.
+        7. Everything must be self-contained in one response — no references to external files.
+        8. For interactive widgets, mentally verify that every button works and every input is handled before outputting.
+        9. Keep total output concise — prefer clean, minimal code over verbose, bloated code.
+        10. If the prompt is ambiguous, make a reasonable assumption and generate the best possible result.
+        11. Do NOT include HTML comments like <!-- --> unless absolutely necessary for code structure.
+        12. For all interactive elements, use onclick or addEventListener — never leave a button without a handler.
+        13. Use try-catch around localStorage operations so the widget doesn't crash if storage is full or blocked.
+        14. Always include <meta name="viewport" content="width=device-width, initial-scale=1.0"> in the <head> for mobile responsiveness.
+    """.trimIndent()
+
     private fun buildSystemPrompt(mode: GeminiSearchMode, notes: List<NoteEntity>): String {
         val basePrompt = when (mode) {
+            GeminiSearchMode.GENERATE_HTML, GeminiSearchMode.GENERAL_AI -> MASTER_SYSTEM_PROMPT
+
             GeminiSearchMode.ASK_NOTES -> """
-                You are an intelligent knowledge engine and AI assistant inside "HTML Notes".
-                The user asks a question, requests information, or searches over their notes collection.
-                Rules:
-                1. Answer any question thoroughly, accurately, and helpfully using your knowledge.
-                2. If the user's question relates to their notes or library, specifically reference and synthesize facts found in the provided notes.
-                3. If citing a note from their library, mention its title in bold like **[Note: Title]**.
-                4. Structure your response with clean markdown headings, formatted bullet points, and concise key takeaways.
-            """.trimIndent()
+                $MASTER_SYSTEM_PROMPT
 
-            GeminiSearchMode.GENERATE_HTML -> """
-                You are a world-class HTML & CSS UI engineer and interactive widget builder inside the "Glass Notes" app.
-
-                Your task is to generate a complete, single-file, mobile-responsive HTML document or interactive widget based on the user's request.
-
-                ## Output Rules:
-                1. Output ONLY raw HTML code. No markdown ticks, no explanations, no comments before or after the code.
-                2. Everything in a single HTML file — inline CSS in <style> and inline JavaScript in <script>. No external files, no CDN links, no external dependencies.
-                3. Do NOT wrap the output in markdown code blocks (no ```html or ```).
-
-                ## Design Rules:
-                4. Mobile-first, responsive, and visually beautiful. Use modern CSS: gradients, shadows, rounded corners, smooth transitions.
-                5. Clean modern color palette. Dark mode supported. Use system fonts only — NO Google Fonts, NO external font CDN.
-                6. Widget should look polished and production-ready, not like a demo.
-
-                ## Performance Rules (IMPORTANT — target device has 3GB RAM):
-                7. Keep JavaScript minimal and lightweight. Avoid heavy computations, infinite loops, or unnecessary animations.
-                8. NO external libraries — no jQuery, no React, no Chart.js, no Tailwind. Pure vanilla JS only.
-                9. Avoid CSS animations that cause repaints (transform and opacity are OK, avoid animating width/height/top/left).
-                10. Keep DOM elements minimal. Don't create unnecessary nested divs.
-
-                ## Functionality Rules:
-                11. If the request is a tool (calculator, stopwatch, unit converter, checklist, invoice, tip calculator, countdown, habit tracker, expense tracker, BMI calculator, etc.), include fully functional embedded JavaScript so ALL buttons, inputs, and interactions work.
-                12. Use localStorage for data persistence where applicable (saving checklist items, expense entries, calculator history, etc.).
-                13. All inputs must have proper validation and error handling.
-                14. Include clear visual feedback for user actions (button press states, toast messages, color changes).
-
-                ## Content Rules:
-                15. If the request is a note (study outline, summary, checklist, markdown document), structure it with clean HTML — headings, bullet points, tables, bold text.
-                16. For checklists, make items interactive — user can tap to check/uncheck, add new items, delete items.
-                17. For study notes, use proper hierarchy (h1, h2, h3) with visual distinction between sections.
-
-                ## Example prompts the user might give:
-                - "Interactive calculator" → fully working calculator with history
-                - "Expense tracker" → add/remove expenses with category and total
-                - "Pomodoro timer" → 25min work / 5min break with start/pause/reset
-                - "Habit tracker" → 7-day grid with tap to mark complete
-                - "Travel packing checklist" → add/check/delete items with localStorage
-                - "Unit converter" → length, weight, temperature conversion
-                - "BMI calculator" → weight + height input with category result
-                - "Countdown to New Year" → live countdown with days/hours/minutes/seconds
+                ADDITIONAL INSTRUCTIONS FOR USER NOTES SEARCH & KNOWLEDGE:
+                - If the user's question relates to their notes or library, specifically reference and synthesize facts found in their notes catalog.
+                - If citing a note from their library, mention its title in bold like **[Note: Title]**.
             """.trimIndent()
 
             GeminiSearchMode.GENERATE_NOTE -> """
-                You are a master writer and note architect.
-                Generate a well-structured, polished note based on the prompt.
-                Use clean markdown with headers (#, ##), bullet points, bold key terms, tables if applicable, and checkboxes (- [ ]) for tasks.
+                $MASTER_SYSTEM_PROMPT
+
+                ADDITIONAL INSTRUCTIONS FOR NOTE ARCHITECTURE:
+                - Structure the note with clean headings (#, ##), bullet points, bold key terms, tables if applicable, and checkboxes (- [ ]) for tasks.
+                - Adhere strictly to the Output Rules: no conversational preamble or postscript.
             """.trimIndent()
 
             GeminiSearchMode.SUMMARIZE_ALL -> """
-                You are an executive knowledge synthesizer.
-                Analyze the user's entire notebook and generate:
-                1. Executive Summary
-                2. Main Themes & Topics
-                3. Open Tasks & Action Items
-                4. Suggested Next Steps
+                $MASTER_SYSTEM_PROMPT
+
+                ADDITIONAL INSTRUCTIONS FOR WORKSPACE SYNTHESIS:
+                - Analyze the user's notebook and structure strictly as:
+                  1. Executive Summary
+                  2. Main Themes
+                  3. Key Concepts
+                  4. Open Tasks
+                  5. Suggested Next Steps
             """.trimIndent()
 
             GeminiSearchMode.ENHANCE_NOTE -> """
-                You are an expert editor and writing coach.
-                Your task is to take the provided text/note prompt, fix grammar, enhance readability, refine the tone, structure key points, and expand on ideas with professional clarity.
+                $MASTER_SYSTEM_PROMPT
+
+                ADDITIONAL INSTRUCTIONS FOR NOTE ENHANCEMENT:
+                - Fix grammar, improve clarity, refine tone, structure key points, and expand ideas with professional polish.
+                - Adhere strictly to the Output Rules: output only the enhanced content.
             """.trimIndent()
 
             GeminiSearchMode.EXTRACT_TASKS -> """
-                You are a productivity & task extraction specialist.
-                Extract every action item, to-do task, deadline, and follow-up from the provided text or workspace notes.
-                Output a clean, organized checklist with checkboxes (- [ ]) grouped logically by priority or topic.
+                $MASTER_SYSTEM_PROMPT
+
+                ADDITIONAL INSTRUCTIONS FOR TASK EXTRACTION:
+                - Extract every action item, to-do task, deadline, and follow-up.
+                - Output a clean, organized checklist with checkboxes (- [ ]) grouped logically by priority or topic.
             """.trimIndent()
 
             GeminiSearchMode.SMART_TAGS -> """
-                You are an intelligent information taxonomy engine.
-                Analyze the provided content or notes database and generate:
-                1. Smart Categories & Folders
-                2. Recommended Tags (#tag)
-                3. Key Concepts & Keywords
-            """.trimIndent()
+                $MASTER_SYSTEM_PROMPT
 
-            GeminiSearchMode.GENERAL_AI -> """
-                You are Ai, an intelligent, helpful, and concise AI assistant inside HTML Notes.
-                Provide clear, accurate, and insightful responses.
+                ADDITIONAL INSTRUCTIONS FOR TAXONOMY:
+                - Analyze the content and output smart categories, recommended tags (#tag), and key concepts.
             """.trimIndent()
         }
 
@@ -523,13 +515,36 @@ object GeminiClient {
     ): GeminiResult {
         var cleanText = rawText.trim()
 
-        // Strip markdown code fences if model enclosed HTML
-        if (mode == GeminiSearchMode.GENERATE_HTML) {
+        // Check if output is HTML (either explicit GENERATE_HTML mode or contains HTML tags)
+        val isHtml = mode == GeminiSearchMode.GENERATE_HTML ||
+                cleanText.contains("<!DOCTYPE html", ignoreCase = true) ||
+                cleanText.contains("<html", ignoreCase = true)
+
+        if (isHtml) {
+            // Strip markdown code fences if model enclosed HTML
             cleanText = cleanText
                 .replace(Regex("^```html\\s*", RegexOption.IGNORE_CASE), "")
                 .replace(Regex("^```\\s*"), "")
                 .replace(Regex("\\s*```$"), "")
                 .trim()
+
+            // Remove any preamble text before <!DOCTYPE html or <html
+            val docTypeIndex = cleanText.indexOf("<!DOCTYPE html", ignoreCase = true)
+            val htmlTagIndex = cleanText.indexOf("<html", ignoreCase = true)
+            val startIndex = when {
+                docTypeIndex >= 0 -> docTypeIndex
+                htmlTagIndex >= 0 -> htmlTagIndex
+                else -> -1
+            }
+            if (startIndex > 0) {
+                cleanText = cleanText.substring(startIndex).trim()
+            }
+
+            // Remove any trailing text after </html>
+            val endHtmlIndex = cleanText.lastIndexOf("</html>", ignoreCase = true)
+            if (endHtmlIndex >= 0) {
+                cleanText = cleanText.substring(0, endHtmlIndex + 7).trim()
+            }
 
             // Derive a clean title
             val titleMatch = Regex("<title>(.*?)</title>", RegexOption.IGNORE_CASE).find(cleanText)
@@ -547,6 +562,12 @@ object GeminiClient {
                 fallbackNotice = fallbackNotice
             )
         }
+
+        // Clean plain text or markdown response: strip accidental code fence wrapping
+        cleanText = cleanText
+            .replace(Regex("^```(?:markdown|text)?\\s*", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\s*```$"), "")
+            .trim()
 
         // Extract cited note IDs if any
         val citedIds = allNotes.filter { note ->
@@ -567,7 +588,7 @@ object GeminiClient {
         return GeminiResult(
             title = if (title.isNotBlank()) title else query.replaceFirstChar { it.uppercase() },
             content = cleanText,
-            suggestedType = if (mode == GeminiSearchMode.GENERATE_HTML) "html" else "text",
+            suggestedType = "text",
             citedNoteIds = citedIds,
             keyInsights = insights,
             modelUsed = modelUsed,
@@ -593,45 +614,53 @@ object GeminiClient {
                 val targetList = if (matchingNotes.isNotEmpty()) matchingNotes else allNotes.take(10)
                 val sb = StringBuilder()
 
-                if (mode == GeminiSearchMode.SUMMARIZE_ALL || query.contains("summar", ignoreCase = true) || query.contains("all", ignoreCase = true)) {
-                    sb.append("# Executive Workspace Summary\n\n")
-                    sb.append("Analysis of **${allNotes.size} notes and documents** in your library:\n\n")
-                    sb.append("### 📊 Distribution\n")
-                    val htmlCount = allNotes.count { it.type == "html" }
-                    val pdfCount = allNotes.count { it.type == "pdf" }
-                    val textCount = allNotes.count { it.type == "text" }
-                    val pinnedCount = allNotes.count { it.pinned }
-                    sb.append("- **Total Items**: ${allNotes.size}\n")
-                    sb.append("- **HTML Documents & Widgets**: $htmlCount\n")
-                    sb.append("- **PDF Documents**: $pdfCount\n")
-                    sb.append("- **Text & Markdown Notes**: $textCount\n")
-                    sb.append("- **Pinned Favorites**: $pinnedCount\n\n")
+                val isSummary = mode == GeminiSearchMode.SUMMARIZE_ALL || query.contains("summar", ignoreCase = true) || query.contains("all", ignoreCase = true)
+                val htmlCount = allNotes.count { it.type == "html" }
+                val textCount = allNotes.count { it.type == "text" }
+                val pinnedCount = allNotes.count { it.pinned }
 
-                    sb.append("### 🌟 Recent Highlights\n")
-                    allNotes.take(6).forEach {
-                        val kind = if (it.type == "pdf") "PDF" else if (it.type == "html") "HTML" else "Text"
-                        sb.append("- **[${kind}] ${it.displayTitle}**: ${it.snippet.take(100)}\n")
-                    }
+                sb.append("### Executive Summary\n")
+                if (isSummary) {
+                    sb.append("Analysis of **${allNotes.size} saved items** across your personal library: $htmlCount HTML widgets/documents, $textCount text notes, and $pinnedCount pinned priorities.\n\n")
                 } else if (matchingNotes.isNotEmpty()) {
-                    sb.append("# Search Synthesis for “$query”\n\n")
-                    sb.append("Found **${matchingNotes.size} relevant note${if (matchingNotes.size == 1) "" else "s"}** across your HTML and PDF collection:\n\n")
-                    matchingNotes.forEach { note ->
-                        val kind = if (note.type == "pdf") "PDF Document" else if (note.type == "html") "HTML Note" else "Note"
-                        sb.append("### 📝 **[$kind: ${note.displayTitle}]**\n")
-                        sb.append("> ${note.snippet}\n\n")
-                    }
-                    sb.append("### 💡 Key Takeaways\n")
-                    sb.append("- Direct matches found in ${matchingNotes.size} documents.\n")
-                    sb.append("- All references are available in your local library.\n")
+                    sb.append("Found **${matchingNotes.size} relevant note${if (matchingNotes.size == 1) "" else "s"}** matching “$query” in your workspace.\n\n")
                 } else {
-                    sb.append("# Knowledge Query: “$query”\n\n")
-                    sb.append("No notes directly contained the exact phrase “$query”.\n\n")
-                    sb.append("### Related Notes in Workspace:\n")
-                    allNotes.take(4).forEach {
-                        val kind = if (it.type == "pdf") "PDF" else if (it.type == "html") "HTML" else "Text"
-                        sb.append("- **[${kind}] ${it.displayTitle}**: ${it.snippet.take(100)}\n")
+                    sb.append("No saved notes directly match “$query”. Below is an overview based on your workspace context and general knowledge.\n\n")
+                }
+
+                sb.append("### Main Themes\n")
+                if (matchingNotes.isNotEmpty()) {
+                    matchingNotes.take(4).forEach { note ->
+                        val kind = if (note.type == "html") "HTML Widget" else "Note"
+                        sb.append("- **[$kind: ${note.displayTitle}]**: ${note.snippet.take(120)}\n")
+                    }
+                } else {
+                    allNotes.take(4).forEach { note ->
+                        val kind = if (note.type == "html") "HTML Widget" else "Note"
+                        sb.append("- **[$kind: ${note.displayTitle}]**: ${note.snippet.take(120)}\n")
                     }
                 }
+                sb.append("\n")
+
+                sb.append("### Key Concepts\n")
+                sb.append("- **Offline Availability**: All notes and interactive widgets are stored locally in your app's Room database.\n")
+                sb.append("- **Interactive WebViews**: Dynamic HTML widgets run completely client-side with native widget support.\n")
+                sb.append("- **Fast Local Search**: Full-text keyword matching across titles, bodies, and tags.\n\n")
+
+                sb.append("### Open Tasks\n")
+                val taskNotes = allNotes.filter { it.content.contains("[ ]") || it.content.contains("checkbox") || it.title.contains("todo", ignoreCase = true) || it.title.contains("task", ignoreCase = true) }
+                if (taskNotes.isNotEmpty()) {
+                    taskNotes.take(3).forEach { tn ->
+                        sb.append("- **${tn.displayTitle}**: Review open action items.\n")
+                    }
+                } else {
+                    sb.append("- No outstanding open tasks found in matching notes.\n")
+                }
+                sb.append("\n")
+
+                sb.append("### Suggested Next Steps\n")
+                sb.append("- Tap any referenced note to view, edit, or launch it full-screen.\n")
+                sb.append("- Generate dedicated HTML widgets for real-time interactive tracking.\n")
 
                 sb.append(notice)
 
