@@ -66,6 +66,13 @@ import androidx.compose.ui.unit.sp
 import com.example.data.model.NoteSummary
 import com.example.ui.theme.GlassTheme
 
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.NoteAdd
+import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.UploadFile
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+
 data class SubjectFolder(
     val name: String,
     val noteCount: Int,
@@ -79,6 +86,10 @@ fun LibraryTab(
     notes: List<NoteSummary>,
     onNoteClick: (String) -> Unit,
     onTogglePin: (String) -> Unit,
+    onDeleteNote: ((String) -> Unit)? = null,
+    onImportPdf: (() -> Unit)? = null,
+    onImportFiles: (() -> Unit)? = null,
+    onCreateNewNote: ((String?) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val colors = GlassTheme.colors
@@ -86,6 +97,7 @@ fun LibraryTab(
     var selectedTypeFilter by remember { mutableStateOf("All") } // "All", "PDF", "HTML", "Favorites"
     var selectedFolder by remember { mutableStateOf<String?>(null) }
     var showCreateFolderDialog by remember { mutableStateOf(false) }
+    var showAddMenu by remember { mutableStateOf(false) }
     var customFolders by remember { mutableStateOf(listOf<String>()) }
     var newFolderName by remember { mutableStateOf("") }
 
@@ -139,24 +151,65 @@ fun LibraryTab(
                             color = colors.text
                         )
 
-                        Box(
-                            modifier = Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(colors.field)
-                                .clickable(
-                                    interactionSource = remember { MutableInteractionSource() },
-                                    indication = ripple(bounded = true, radius = 20.dp),
-                                    onClick = { showCreateFolderDialog = true }
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Add,
-                                contentDescription = "Create Folder",
-                                tint = colors.text,
-                                modifier = Modifier.size(22.dp)
-                            )
+                        Box {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(colors.field)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = ripple(bounded = true, radius = 20.dp),
+                                        onClick = { showAddMenu = true }
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Add Content",
+                                    tint = colors.text,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
+                            DropdownMenu(
+                                expanded = showAddMenu,
+                                onDismissRequest = { showAddMenu = false },
+                                modifier = Modifier.background(colors.glass)
+                            ) {
+                                DropdownMenuItem(
+                                    text = { Text("Create New Note", color = colors.text) },
+                                    leadingIcon = { Icon(Icons.Default.NoteAdd, contentDescription = null, tint = colors.pastelBlue) },
+                                    onClick = {
+                                        showAddMenu = false
+                                        onCreateNewNote?.invoke(selectedFolder)
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Import PDF Document", color = colors.text) },
+                                    leadingIcon = { Icon(Icons.Default.PictureAsPdf, contentDescription = null, tint = colors.pastelPdfRed) },
+                                    onClick = {
+                                        showAddMenu = false
+                                        onImportPdf?.invoke()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Import Text / HTML File", color = colors.text) },
+                                    leadingIcon = { Icon(Icons.Default.UploadFile, contentDescription = null, tint = colors.pastelMint) },
+                                    onClick = {
+                                        showAddMenu = false
+                                        onImportFiles?.invoke()
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("New Subject Folder", color = colors.text) },
+                                    leadingIcon = { Icon(Icons.Default.CreateNewFolder, contentDescription = null, tint = colors.pastelLavender) },
+                                    onClick = {
+                                        showAddMenu = false
+                                        showCreateFolderDialog = true
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -314,33 +367,61 @@ fun LibraryTab(
                             )
                         }
 
-                        Box(
-                            modifier = Modifier
-                                .size(42.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(subjectDef.bg),
-                            contentAlignment = Alignment.Center
+                        Row(
+                            modifier = Modifier.weight(1f),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.Folder,
-                                contentDescription = null,
-                                tint = subjectDef.color,
-                                modifier = Modifier.size(22.dp)
-                            )
+                            Box(
+                                modifier = Modifier
+                                    .size(42.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(subjectDef.bg),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Folder,
+                                    contentDescription = null,
+                                    tint = subjectDef.color,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
+
+                            Column {
+                                Text(
+                                    text = folder,
+                                    fontSize = 22.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.text
+                                )
+                                Text(
+                                    text = "${folderNotes.size} notes available",
+                                    fontSize = 13.sp,
+                                    color = colors.textSecondary
+                                )
+                            }
                         }
 
-                        Column {
-                            Text(
-                                text = folder,
-                                fontSize = 22.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = colors.text
-                            )
-                            Text(
-                                text = "${folderNotes.size} notes available",
-                                fontSize = 13.sp,
-                                color = colors.textSecondary
-                            )
+                        Box {
+                            Box(
+                                modifier = Modifier
+                                    .size(40.dp)
+                                    .clip(CircleShape)
+                                    .background(colors.field)
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = ripple(bounded = true, radius = 20.dp),
+                                        onClick = { showAddMenu = true }
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Add Content",
+                                    tint = colors.text,
+                                    modifier = Modifier.size(22.dp)
+                                )
+                            }
                         }
                     }
                 }
@@ -397,7 +478,8 @@ fun LibraryTab(
                         RecentNoteCard(
                             note = note,
                             onClick = { onNoteClick(note.id) },
-                            onTogglePin = { onTogglePin(note.id) }
+                            onTogglePin = { onTogglePin(note.id) },
+                            onDelete = { onDeleteNote?.invoke(note.id) }
                         )
                     }
                 }

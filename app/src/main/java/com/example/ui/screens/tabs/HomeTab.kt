@@ -31,6 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.PictureAsPdf
@@ -75,6 +76,7 @@ fun HomeTab(
     onFilterSelected: (QuickCategoryFilter) -> Unit,
     onNoteClick: (String) -> Unit,
     onTogglePin: (String) -> Unit,
+    onDeleteNote: ((String) -> Unit)? = null,
     onOpenSearch: () -> Unit,
     onOpenSettings: () -> Unit,
     onOpenCreateNote: () -> Unit,
@@ -325,7 +327,8 @@ fun HomeTab(
                     RecentNoteCard(
                         note = note,
                         onClick = { onNoteClick(note.id) },
-                        onTogglePin = { onTogglePin(note.id) }
+                        onTogglePin = { onTogglePin(note.id) },
+                        onDelete = { onDeleteNote?.invoke(note.id) }
                     )
                 }
             }
@@ -425,6 +428,8 @@ fun RecentNoteCard(
     note: NoteSummary,
     onClick: () -> Unit,
     onTogglePin: () -> Unit,
+    onDelete: (() -> Unit)? = null,
+    onMoreClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val colors = GlassTheme.colors
@@ -513,17 +518,33 @@ fun RecentNoteCard(
                 }
             }
 
-            // Pin / Favorite Icon Button
-            IconButton(
-                onClick = onTogglePin,
-                modifier = Modifier.size(36.dp)
-            ) {
-                Icon(
-                    imageVector = if (note.pinned) Icons.Default.Star else Icons.Outlined.StarBorder,
-                    contentDescription = if (note.pinned) "Unpin" else "Pin",
-                    tint = if (note.pinned) colors.pastelFavYellow else colors.textTertiary,
-                    modifier = Modifier.size(20.dp)
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // Pin / Favorite Icon Button
+                IconButton(
+                    onClick = onTogglePin,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        imageVector = if (note.pinned) Icons.Default.Star else Icons.Outlined.StarBorder,
+                        contentDescription = if (note.pinned) "Unpin" else "Pin",
+                        tint = if (note.pinned) colors.pastelFavYellow else colors.textTertiary,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+
+                if (onDelete != null) {
+                    IconButton(
+                        onClick = onDelete,
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Delete",
+                            tint = Color(0xFFEF4444).copy(alpha = 0.85f),
+                            modifier = Modifier.size(19.dp)
+                        )
+                    }
+                }
             }
         }
     }

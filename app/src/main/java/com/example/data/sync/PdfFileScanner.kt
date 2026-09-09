@@ -145,6 +145,13 @@ object PdfFileScanner {
         try {
             val rootDirs = mutableListOf<File>()
 
+            // 0. Root External Storage
+            try {
+                Environment.getExternalStorageDirectory()?.let {
+                    if (it.exists() && it.canRead()) rootDirs.add(it)
+                }
+            } catch (_: Throwable) {}
+
             // 1. Documents Directory
             try {
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)?.let {

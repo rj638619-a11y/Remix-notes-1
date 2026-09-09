@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Fullscreen
 import androidx.compose.material.icons.filled.FullscreenExit
 import androidx.compose.material.icons.filled.MoreVert
@@ -94,6 +95,7 @@ fun PdfReaderScreen(
     onBack: () -> Unit,
     onOpenAiAssistant: (String) -> Unit,
     onToggleBookmark: (String) -> Unit,
+    onDelete: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val colors = GlassTheme.colors
@@ -236,6 +238,18 @@ fun PdfReaderScreen(
                                     panOffset = Offset.Zero
                                 }
                             )
+                            if (onDelete != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Delete Document", color = Color(0xFFEF4444)) },
+                                    onClick = {
+                                        showOptionsMenu = false
+                                        onDelete()
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFEF4444))
+                                    }
+                                )
+                            }
                         }
                     }
                 }

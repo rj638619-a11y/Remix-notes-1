@@ -71,13 +71,16 @@ object HtmlFileScanner {
             )
 
             val selection = "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.html' OR " +
+                    "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.HTML' OR " +
                     "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.htm' OR " +
+                    "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.HTM' OR " +
                     "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.xhtml' OR " +
+                    "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.XHTML' OR " +
                     "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.txt' OR " +
+                    "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.TXT' OR " +
                     "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.md' OR " +
-                    "${MediaStore.Files.FileColumns.MIME_TYPE} = 'text/html' OR " +
-                    "${MediaStore.Files.FileColumns.MIME_TYPE} = 'text/plain' OR " +
-                    "${MediaStore.Files.FileColumns.MIME_TYPE} = 'text/markdown'"
+                    "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.MD' OR " +
+                    "${MediaStore.Files.FileColumns.MIME_TYPE} LIKE 'text/%'"
 
             val queryUri = MediaStore.Files.getContentUri("external")
 
@@ -154,7 +157,13 @@ object HtmlFileScanner {
         try {
             val rootDirs = mutableListOf<File>()
 
-            // 1. Primary Public Directories
+            // 1. Primary Public Directories & Root External Storage
+            try {
+                Environment.getExternalStorageDirectory()?.let {
+                    if (it.exists() && it.canRead()) rootDirs.add(it)
+                }
+            } catch (_: Throwable) {}
+
             try {
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)?.let {
                     if (it.exists() && it.canRead()) rootDirs.add(it)

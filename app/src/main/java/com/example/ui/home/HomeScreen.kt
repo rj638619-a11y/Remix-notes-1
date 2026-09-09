@@ -1,6 +1,8 @@
 package com.example.ui.home
 
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -114,15 +116,37 @@ fun HomeScreen(
         }
     }
 
-    fun createNewNote() {
+    val pdfPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.importPdfUris(uris)
+        }
+    }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            viewModel.importFileUris(uris)
+        }
+    }
+
+    fun createNewNote(category: String? = null) {
         viewModel.createNote(type = "text") { newId ->
             coroutineScope.launch {
                 delay(120)
+                if (!category.isNullOrBlank()) {
+                    val n = allNotes.find { it.id == newId }
+                    if (n != null) {
+                        viewModel.updateNote(n.copy(category = category))
+                    }
+                }
                 val newNote = allNotes.find { it.id == newId } ?: NoteEntity(
                     id = newId,
                     title = "Untitled Study Note",
                     content = "",
-                    category = "My Notes"
+                    category = category ?: "My Notes"
                 )
                 currentScreen = ActiveScreen.Editor(newNote)
             }
@@ -177,13 +201,14 @@ fun HomeScreen(
                                         }
                                 ) {
                                     when (MainTab.entries[page]) {
-                                        MainTab.HOME -> {
+                                         MainTab.HOME -> {
                                             HomeTab(
                                                 notes = noteSummaries,
                                                 selectedFilter = homeFilter,
                                                 onFilterSelected = { homeFilter = it },
                                                 onNoteClick = { noteId -> openNote(noteId) },
                                                 onTogglePin = { noteId -> viewModel.togglePin(noteId) },
+                                                onDeleteNote = { noteId -> viewModel.deleteNote(noteId) },
                                                 onOpenSearch = { currentScreen = ActiveScreen.Search },
                                                 onOpenSettings = { currentScreen = ActiveScreen.SettingsOverlay },
                                                 onOpenCreateNote = { createNewNote() },
@@ -199,7 +224,11 @@ fun HomeScreen(
                                             LibraryTab(
                                                 notes = noteSummaries,
                                                 onNoteClick = { noteId -> openNote(noteId) },
-                                                onTogglePin = { noteId -> viewModel.togglePin(noteId) }
+                                                onTogglePin = { noteId -> viewModel.togglePin(noteId) },
+                                                onDeleteNote = { noteId -> viewModel.deleteNote(noteId) },
+                                                onImportPdf = { pdfPickerLauncher.launch(arrayOf("application/pdf")) },
+                                                onImportFiles = { filePickerLauncher.launch(arrayOf("text/*", "text/html", "*/*")) },
+                                                onCreateNewNote = { category -> createNewNote(category) }
                                             )
                                         }
 
@@ -277,7 +306,11 @@ fun HomeScreen(
                                 currentTab = MainTab.AI
                                 currentScreen = ActiveScreen.Main(MainTab.AI)
                             },
-                            onToggleBookmark = { noteId -> viewModel.togglePin(noteId) }
+                            onToggleBookmark = { noteId -> viewModel.togglePin(noteId) },
+                            onDelete = {
+                                viewModel.deleteNote(screen.note.id)
+                                currentScreen = ActiveScreen.Main(currentTab)
+                            }
                         )
                     }
 
@@ -291,7 +324,11 @@ fun HomeScreen(
                                 currentTab = MainTab.AI
                                 currentScreen = ActiveScreen.Main(MainTab.AI)
                             },
-                            onToggleBookmark = { noteId -> viewModel.togglePin(noteId) }
+                            onToggleBookmark = { noteId -> viewModel.togglePin(noteId) },
+                            onDelete = {
+                                viewModel.deleteNote(screen.note.id)
+                                currentScreen = ActiveScreen.Main(currentTab)
+                            }
                         )
                     }
 

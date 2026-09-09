@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.Fullscreen
@@ -99,6 +100,7 @@ fun HtmlNoteReaderScreen(
     onBack: () -> Unit,
     onOpenAiSummary: (String) -> Unit,
     onToggleBookmark: (String) -> Unit,
+    onDelete: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val colors = GlassTheme.colors
@@ -285,6 +287,18 @@ fun HtmlNoteReaderScreen(
                                     Icon(Icons.Default.Toc, contentDescription = null)
                                 }
                             )
+                            if (onDelete != null) {
+                                DropdownMenuItem(
+                                    text = { Text("Delete Document", color = Color(0xFFEF4444)) },
+                                    onClick = {
+                                        showOptionsMenu = false
+                                        onDelete()
+                                    },
+                                    leadingIcon = {
+                                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color(0xFFEF4444))
+                                    }
+                                )
+                            }
                         }
                     }
                 }

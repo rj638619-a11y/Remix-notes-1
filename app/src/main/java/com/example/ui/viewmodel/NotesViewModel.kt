@@ -1431,6 +1431,65 @@ class NotesViewModel(
         }
     }
 
+    fun updateNote(note: NoteEntity) {
+        viewModelScope.launch {
+            repository.updateNote(note)
+        }
+    }
+
+    fun importPdfUris(uris: List<android.net.Uri>) {
+        viewModelScope.launch {
+            val context = getApplication<Application>()
+            for (uri in uris) {
+                val name = getFileName(context, uri) ?: "Document_${System.currentTimeMillis()}.pdf"
+                importPdf(uri, name)
+            }
+        }
+    }
+
+    fun importFileUris(uris: List<android.net.Uri>) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val context = getApplication<Application>()
+            val pairs = mutableListOf<Pair<String, String>>()
+            for (uri in uris) {
+                try {
+                    val name = getFileName(context, uri) ?: "Note_${System.currentTimeMillis()}.txt"
+                    val content = context.contentResolver.openInputStream(uri)?.use { input ->
+                        input.bufferedReader().readText()
+                    } ?: ""
+                    if (content.isNotBlank()) {
+                        pairs.add(Pair(name, content))
+                    }
+                } catch (_: Exception) {}
+            }
+            if (pairs.isNotEmpty()) {
+                importFiles(pairs)
+            }
+        }
+    }
+
+    private fun getFileName(context: Context, uri: android.net.Uri): String? {
+        var result: String? = null
+        if (uri.scheme == "content") {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val index = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (index != -1) {
+                        result = cursor.getString(index)
+                    }
+                }
+            }
+        }
+        if (result == null) {
+            result = uri.path
+            val cut = result?.lastIndexOf('/') ?: -1
+            if (cut != -1) {
+                result = result?.substring(cut + 1)
+            }
+        }
+        return result
+    }
+
     fun importPdf(uri: android.net.Uri, name: String) {
         viewModelScope.launch {
             try {
