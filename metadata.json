@@ -1,6 +1,6 @@
 {
-  "name": "NOTES",
-  "description": "A sleek glassmorphism note app with an isolated Secret Vault virtual mobile phone, private media player, secure gallery, browser, notes, and file protection.",
+  "name": "Notes",
+  "description": "A premium AI-powered study notes application with Apple-inspired neumorphic glassmorphism design. Read • Organize • Learn • Grow.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

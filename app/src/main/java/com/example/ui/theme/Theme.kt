@@ -14,9 +14,9 @@ import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
 private val DarkColorScheme = darkColorScheme(
-    primary = AccentDark,
-    secondary = Accent2Color,
-    tertiary = ChipOnTxDark,
+    primary = AccentBlue,
+    secondary = AccentLavender,
+    tertiary = AccentMint,
     background = BgDark,
     surface = CardDark,
     onPrimary = TxDark,
@@ -26,8 +26,8 @@ private val DarkColorScheme = darkColorScheme(
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = AccentLight,
-    secondary = Accent2Color,
+    primary = AccentBlue,
+    secondary = AccentLavender,
     tertiary = ChipOnTxLight,
     background = BgLight,
     surface = CardLight,
@@ -39,32 +39,55 @@ private val LightColorScheme = lightColorScheme(
 
 @Composable
 fun GlassNotesTheme(
-    themeSetting: String = "auto", // "auto", "light", "dark"
+    themeSetting: String = "auto", // "auto", "light", "dark", "matcha", "lavender", "sepia", "ocean"
     reduceTransparency: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val darkTheme = when (themeSetting) {
-        "dark" -> true
-        "light" -> false
-        else -> isSystemInDarkTheme()
+    val isSysDark = isSystemInDarkTheme()
+    val baseColors = when (themeSetting.lowercase()) {
+        "dark" -> DarkGlassColors
+        "light" -> LightGlassColors
+        "matcha" -> MatchaGlassColors
+        "lavender" -> LavenderGlassColors
+        "sepia" -> SepiaGlassColors
+        "ocean" -> OceanGlassColors
+        else -> if (isSysDark) DarkGlassColors else LightGlassColors
     }
 
-    val targetColors = (if (darkTheme) DarkGlassColors else LightGlassColors).let { base ->
+    val isDark = baseColors.isDark
+
+    val targetColors = baseColors.let { base ->
         base.copy(
             isReduced = reduceTransparency,
-            glass = if (reduceTransparency) (if (darkTheme) CardDark else CardLight) else (if (darkTheme) GlassDark else GlassLight)
+            glass = if (reduceTransparency) base.card else base.glass
         )
     }
 
-    val colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme
+    val colorScheme = if (isDark) {
+        DarkColorScheme.copy(
+            primary = targetColors.accent,
+            background = targetColors.bg,
+            surface = targetColors.card,
+            onBackground = targetColors.text,
+            onSurface = targetColors.text
+        )
+    } else {
+        LightColorScheme.copy(
+            primary = targetColors.accent,
+            background = targetColors.bg,
+            surface = targetColors.card,
+            onBackground = targetColors.text,
+            onSurface = targetColors.text
+        )
+    }
 
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as? Activity)?.window ?: return@SideEffect
             val insetsController = WindowCompat.getInsetsController(window, view)
-            insetsController.isAppearanceLightStatusBars = !darkTheme
-            insetsController.isAppearanceLightNavigationBars = !darkTheme
+            insetsController.isAppearanceLightStatusBars = !isDark
+            insetsController.isAppearanceLightNavigationBars = !isDark
         }
     }
 
@@ -85,4 +108,3 @@ object GlassTheme {
         @ReadOnlyComposable
         get() = LocalGlassColors.current
 }
-

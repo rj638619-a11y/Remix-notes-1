@@ -73,7 +73,11 @@ object HtmlFileScanner {
             val selection = "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.html' OR " +
                     "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.htm' OR " +
                     "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.xhtml' OR " +
-                    "${MediaStore.Files.FileColumns.MIME_TYPE} = 'text/html'"
+                    "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.txt' OR " +
+                    "${MediaStore.Files.FileColumns.DISPLAY_NAME} LIKE '%.md' OR " +
+                    "${MediaStore.Files.FileColumns.MIME_TYPE} = 'text/html' OR " +
+                    "${MediaStore.Files.FileColumns.MIME_TYPE} = 'text/plain' OR " +
+                    "${MediaStore.Files.FileColumns.MIME_TYPE} = 'text/markdown'"
 
             val queryUri = MediaStore.Files.getContentUri("external")
 
@@ -249,11 +253,14 @@ object HtmlFileScanner {
                 if (file.isDirectory) {
                     scanDirectoryRecursively(file, depth + 1, discovered, seenFingerprints, seenCanonicalPaths, visitedDirPaths)
                 } else if (file.isFile) {
-                    val isHtml = name.endsWith(".html", ignoreCase = true) ||
+                    val isTextOrHtml = name.endsWith(".html", ignoreCase = true) ||
                             name.endsWith(".htm", ignoreCase = true) ||
-                            name.endsWith(".xhtml", ignoreCase = true)
+                            name.endsWith(".xhtml", ignoreCase = true) ||
+                            name.endsWith(".txt", ignoreCase = true) ||
+                            name.endsWith(".md", ignoreCase = true) ||
+                            name.endsWith(".markdown", ignoreCase = true)
 
-                    if (isHtml) {
+                    if (isTextOrHtml) {
                         val canonical = try { file.canonicalPath.lowercase() } catch (_: Throwable) { file.absolutePath.lowercase() }
                         val fileSize = file.length()
                         val fingerprint = "${name.trim().lowercase()}::$fileSize"
@@ -316,12 +323,17 @@ object HtmlFileScanner {
                 if (child.isDirectory) {
                     scanDocumentFileRecursively(child, depth + 1, discovered, seenFingerprints)
                 } else if (child.isFile) {
-                    val isHtml = name.endsWith(".html", ignoreCase = true) ||
+                    val isTextOrHtml = name.endsWith(".html", ignoreCase = true) ||
                             name.endsWith(".htm", ignoreCase = true) ||
                             name.endsWith(".xhtml", ignoreCase = true) ||
-                            child.type == "text/html"
+                            name.endsWith(".txt", ignoreCase = true) ||
+                            name.endsWith(".md", ignoreCase = true) ||
+                            name.endsWith(".markdown", ignoreCase = true) ||
+                            child.type == "text/html" ||
+                            child.type == "text/plain" ||
+                            child.type == "text/markdown"
 
-                    if (isHtml) {
+                    if (isTextOrHtml) {
                         val size = child.length()
                         val fingerprint = "${name.trim().lowercase()}::$size"
                         if (seenFingerprints.add(fingerprint)) {

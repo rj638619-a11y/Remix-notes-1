@@ -1311,6 +1311,57 @@ class NotesViewModel(
         }
     }
 
+    fun syncFullDevice(silent: Boolean = false, onResult: ((scanned: Int, imported: Int) -> Unit)? = null) {
+        viewModelScope.launch {
+            try {
+                val htmlRes = repository.syncAllDeviceHtmlFiles()
+                val pdfRes = repository.syncAllDevicePdfFiles()
+                val totalScanned = htmlRes.scanned + pdfRes.scanned
+                val totalNew = htmlRes.newCount + pdfRes.newCount
+                val totalUpd = htmlRes.updatedCount + pdfRes.updatedCount
+
+                val parts = mutableListOf<String>()
+                if (totalNew > 0) parts.add("$totalNew new notes/docs")
+                if (totalUpd > 0) parts.add("$totalUpd updated")
+                val summary = if (parts.isNotEmpty()) {
+                    "Device Sync Complete: ${parts.joinToString(", ")}"
+                } else {
+                    "Device Scan Complete: $totalScanned files checked (Up to date)"
+                }
+                if (!silent) {
+                    showToast(summary)
+                }
+                onResult?.invoke(totalScanned, totalNew)
+            } catch (e: Exception) {
+                if (!silent) {
+                    showToast("Sync encountered an issue: ${e.localizedMessage ?: "Unknown error"}")
+                }
+            }
+        }
+    }
+
+    fun addNoteDirect(title: String, content: String, type: String = "text", category: String = "My Notes", onCreated: ((String) -> Unit)? = null) {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val cleanTitle = title.trim().ifBlank { "Untitled Note" }
+            val newNote = NoteEntity(
+                id = UUID.randomUUID().toString().take(12),
+                title = cleanTitle,
+                type = type,
+                content = content,
+                category = category,
+                pinned = false,
+                source = null,
+                createdAt = now,
+                updatedAt = now,
+                hash = HashUtil.noteHash(cleanTitle, content)
+            )
+            repository.insertNote(newNote)
+            showToast("Saved note: $cleanTitle")
+            onCreated?.invoke(newNote.id)
+        }
+    }
+
     fun syncCurrentMode(silent: Boolean = false) {
         if (settings.value.readerMode == "pdf") {
             syncAllDevicePdfFiles(silent = silent)

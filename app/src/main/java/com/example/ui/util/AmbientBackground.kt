@@ -20,49 +20,59 @@ fun AmbientBackground(
         val h = size.height
 
         if (isDark) {
-            // Dark mode amber ambient top-left glow
+            // Dark mode soft subtle blue ambient top-center glow
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(Color(0x12F2B90C), Color.Transparent),
-                    center = Offset(w * 0.12f, -h * 0.06f),
-                    radius = w * 0.85f
+                    colors = listOf(Color(0x183872E0), Color.Transparent),
+                    center = Offset(w * 0.2f, -h * 0.05f),
+                    radius = w * 0.9f
                 ),
-                center = Offset(w * 0.12f, -h * 0.06f),
-                radius = w * 0.85f
+                center = Offset(w * 0.2f, -h * 0.05f),
+                radius = w * 0.9f
             )
 
-            // Dark mode subtle purple ambient right glow
+            // Dark mode subtle lavender glow on right
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(Color(0x0D7850C8), Color.Transparent),
-                    center = Offset(w * 1.08f, h * 0.26f),
-                    radius = w * 0.95f
+                    colors = listOf(Color(0x129652DE), Color.Transparent),
+                    center = Offset(w * 0.9f, h * 0.35f),
+                    radius = w * 0.8f
                 ),
-                center = Offset(w * 1.08f, h * 0.26f),
-                radius = w * 0.95f
+                center = Offset(w * 0.9f, h * 0.35f),
+                radius = w * 0.8f
             )
         } else {
-            // Light mode amber ambient top-left glow
-            drawCircle(
-                brush = Brush.radialGradient(
-                    colors = listOf(Color(0x1CF2B90C), Color.Transparent),
-                    center = Offset(w * 0.12f, -h * 0.06f),
-                    radius = w * 0.85f
-                ),
-                center = Offset(w * 0.12f, -h * 0.06f),
-                radius = w * 0.85f
+            // Light mode soft white/subtle grey gradient base
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color(0xFFFBFBF9), Color(0xFFF2F3EF), Color(0xFFEBECE7)),
+                    startY = 0f,
+                    endY = h
+                )
             )
 
-            // Light mode warm orange ambient right glow
+            // Soft delicate blue illumination top left
             drawCircle(
                 brush = Brush.radialGradient(
-                    colors = listOf(Color(0x12E07A3C), Color.Transparent),
-                    center = Offset(w * 1.08f, h * 0.26f),
-                    radius = w * 0.95f
+                    colors = listOf(Color(0x0C3872E0), Color.Transparent),
+                    center = Offset(w * 0.15f, h * 0.05f),
+                    radius = w * 0.7f
                 ),
-                center = Offset(w * 1.08f, h * 0.26f),
-                radius = w * 0.95f
+                center = Offset(w * 0.15f, h * 0.05f),
+                radius = w * 0.7f
+            )
+
+            // Soft delicate warm illumination right
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = listOf(Color(0x08FF9500), Color.Transparent),
+                    center = Offset(w * 0.95f, h * 0.28f),
+                    radius = w * 0.85f
+                ),
+                center = Offset(w * 0.95f, h * 0.28f),
+                radius = w * 0.85f
             )
         }
     }
 }
+
