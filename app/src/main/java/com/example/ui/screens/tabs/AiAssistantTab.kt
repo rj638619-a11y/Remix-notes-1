@@ -1,10 +1,10 @@
 package com.example.ui.screens.tabs
 
+import android.content.Context
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,12 +32,17 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -46,11 +51,10 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.ripple
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -59,31 +63,39 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.api.GeminiClient
+import com.example.data.model.ChatMessage
+import com.example.data.model.ChatSession
 import com.example.ui.theme.GlassTheme
-import kotlinx.coroutines.delay
+import com.example.ui.viewmodel.GeminiQueryState
+import com.example.util.VibrationHelper
 import kotlinx.coroutines.launch
-
-data class ChatMessage(
-    val id: String = java.util.UUID.randomUUID().toString(),
-    val sender: MessageSender,
-    val text: String,
-    val timestamp: Long = System.currentTimeMillis()
-)
-
-enum class MessageSender {
-    USER, AI
-}
 
 @Composable
 fun AiAssistantTab(
+    chatSessions: List<ChatSession> = emptyList(),
+    activeChatSession: ChatSession? = null,
+    geminiState: GeminiQueryState = GeminiQueryState.Idle,
+    geminiApiKey: String = "",
+    chatSelectedModel: String = "gemini-2.0-flash",
+    chatDetailedAnswers: Boolean = false,
+    onSendChatPrompt: (String) -> Unit = {},
+    onStartNewChat: () -> Unit = {},
+    onSelectChatSession: (String) -> Unit = {},
+    onDeleteChatSession: (String) -> Unit = {},
+    onClearAllChats: () -> Unit = {},
+    onSetGeminiApiKey: (String) -> Unit = {},
+    onSetChatDetailedAnswers: (Boolean) -> Unit = {},
+    onSetChatSelectedModel: (String) -> Unit = {},
     initialPrompt: String? = null,
     modifier: Modifier = Modifier
 ) {
@@ -91,55 +103,48 @@ fun AiAssistantTab(
     val clipboardManager = LocalClipboardManager.current
     val coroutineScope = rememberCoroutineScope()
     val listState = rememberLazyListState()
+    val context = LocalContext.current
 
     var inputPrompt by remember { mutableStateOf("") }
-    var isGenerating by remember { mutableStateOf(false) }
     var showMenu by remember { mutableStateOf(false) }
+    var showApiKeyDialog by remember { mutableStateOf(false) }
+    var apiKeyDraft by remember(geminiApiKey) { mutableStateOf(geminiApiKey) }
+    var testResultText by remember { mutableStateOf<String?>(null) }
+    var isTestingConnection by remember { mutableStateOf(false) }
 
-    val messages = remember {
-        mutableStateListOf(
-            ChatMessage(
-                sender = MessageSender.AI,
-                text = "Hello! I'm your AI Study Assistant 🎓. I can help you summarize PDFs, generate practice exam questions, explain complex formulas, and create concise flashcard study notes. How can I assist your learning today?"
-            )
-        )
+    val isKeyConnected = remember(geminiApiKey) {
+        GeminiClient.isValidGeminiApiKey(geminiApiKey) || GeminiClient.isValidGeminiApiKey(GeminiClient.getApiKey())
     }
 
-    // Handle initial prompt if passed in from reader
+    val displayMessages = activeChatSession?.messages ?: emptyList()
+
+    // Handle initial prompt if passed in from reader/editor
     LaunchedEffect(initialPrompt) {
         if (!initialPrompt.isNullOrBlank()) {
-            messages.add(ChatMessage(sender = MessageSender.USER, text = initialPrompt))
-            isGenerating = true
-            delay(1000L)
-            val answer = generateSmartStudyAnswer(initialPrompt)
-            messages.add(ChatMessage(sender = MessageSender.AI, text = answer))
-            isGenerating = false
-            listState.animateScrollToItem(messages.size - 1)
+            onSendChatPrompt(initialPrompt)
+        }
+    }
+
+    // Auto-scroll on new messages
+    LaunchedEffect(displayMessages.size, geminiState) {
+        if (displayMessages.isNotEmpty()) {
+            listState.animateScrollToItem(displayMessages.size - 1)
         }
     }
 
     val quickPrompts = listOf(
-        "Summarize this PDF",
-        "Explain Photosynthesis",
-        "Create important exam questions",
-        "Make short revision notes",
-        "Explain Newton's Laws",
-        "Chemical Bonding types"
+        "Summarize my study notes",
+        "Explain Photosynthesis formula",
+        "Create high-yield practice questions",
+        "Make concise revision notes",
+        "Explain Newton's Laws of Motion",
+        "Chemical Bonding types summary"
     )
 
-    fun sendMessage(userText: String) {
+    fun sendUserPrompt(userText: String) {
         if (userText.isBlank()) return
-        messages.add(ChatMessage(sender = MessageSender.USER, text = userText))
+        onSendChatPrompt(userText)
         inputPrompt = ""
-        isGenerating = true
-
-        coroutineScope.launch {
-            delay(900L)
-            val aiResponse = generateSmartStudyAnswer(userText)
-            messages.add(ChatMessage(sender = MessageSender.AI, text = aiResponse))
-            isGenerating = false
-            listState.animateScrollToItem(messages.size - 1)
-        }
     }
 
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -189,31 +194,84 @@ fun AiAssistantTab(
                     }
                 }
 
-                Box {
-                    IconButton(onClick = { showMenu = true }) {
-                        Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = colors.text)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // API Key badge
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(if (isKeyConnected) Color(0xFF10B981).copy(alpha = 0.15f) else Color(0xFFF59E0B).copy(alpha = 0.15f))
+                            .clickable {
+                                apiKeyDraft = geminiApiKey
+                                testResultText = null
+                                showApiKeyDialog = true
+                            }
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Key,
+                                contentDescription = "API Key",
+                                tint = if (isKeyConnected) Color(0xFF10B981) else Color(0xFFF59E0B),
+                                modifier = Modifier.size(14.dp)
+                            )
+                            Text(
+                                text = if (isKeyConnected) "Connected" else "Set Key",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isKeyConnected) Color(0xFF10B981) else Color(0xFFF59E0B)
+                            )
+                        }
                     }
 
-                    DropdownMenu(
-                        expanded = showMenu,
-                        onDismissRequest = { showMenu = false }
-                    ) {
-                        DropdownMenuItem(
-                            text = { Text("Clear Chat History") },
-                            onClick = {
-                                showMenu = false
-                                messages.clear()
-                                messages.add(
-                                    ChatMessage(
-                                        sender = MessageSender.AI,
-                                        text = "Chat history cleared. How can I help you study next?"
-                                    )
-                                )
-                            },
-                            leadingIcon = {
-                                Icon(Icons.Default.Delete, contentDescription = null, tint = colors.danger)
-                            }
-                        )
+                    Box {
+                        IconButton(onClick = { showMenu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "Menu", tint = colors.text)
+                        }
+
+                        DropdownMenu(
+                            expanded = showMenu,
+                            onDismissRequest = { showMenu = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("New Chat Session") },
+                                onClick = {
+                                    showMenu = false
+                                    onStartNewChat()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Add, contentDescription = null, tint = colors.pastelBlue)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Configure Gemini Key") },
+                                onClick = {
+                                    showMenu = false
+                                    apiKeyDraft = geminiApiKey
+                                    testResultText = null
+                                    showApiKeyDialog = true
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Key, contentDescription = null, tint = colors.textSecondary)
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Clear All Chats") },
+                                onClick = {
+                                    showMenu = false
+                                    onClearAllChats()
+                                },
+                                leadingIcon = {
+                                    Icon(Icons.Default.Delete, contentDescription = null, tint = colors.danger)
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -221,7 +279,7 @@ fun AiAssistantTab(
             // Quick Prompt Chips
             LazyRow(
                 modifier = Modifier.fillMaxWidth(),
-                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 6.dp),
+                contentPadding = PaddingValues(horizontal = 18.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(quickPrompts) { prompt ->
@@ -231,7 +289,7 @@ fun AiAssistantTab(
                             .clip(RoundedCornerShape(16.dp))
                             .background(colors.card)
                             .border(1.dp, colors.glassBorder, RoundedCornerShape(16.dp))
-                            .clickable { sendMessage(prompt) }
+                            .clickable { sendUserPrompt(prompt) }
                             .padding(horizontal = 14.dp, vertical = 8.dp)
                     ) {
                         Row(
@@ -255,7 +313,9 @@ fun AiAssistantTab(
                 }
             }
 
-            // Message List
+            Spacer(modifier = Modifier.height(4.dp))
+
+            // Message List / Chat Feed
             LazyColumn(
                 state = listState,
                 modifier = Modifier
@@ -264,16 +324,61 @@ fun AiAssistantTab(
                 contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 8.dp, bottom = navBarBottom + 160.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                items(messages, key = { it.id }) { msg ->
-                    ChatBubble(
-                        message = msg,
-                        onCopy = {
-                            clipboardManager.setText(AnnotatedString(msg.text))
+                if (displayMessages.isEmpty()) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(56.dp)
+                                        .clip(CircleShape)
+                                        .background(colors.pastelBlueBg),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.SmartToy,
+                                        contentDescription = null,
+                                        tint = colors.pastelBlue,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                }
+                                Text(
+                                    text = "Ready to study & learn! 🎓",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = colors.text
+                                )
+                                Text(
+                                    text = "Ask anything about your study notes, formulas, or tap a quick chip above to generate flashcards and summaries.",
+                                    fontSize = 13.sp,
+                                    color = colors.textSecondary,
+                                    modifier = Modifier.padding(horizontal = 24.dp)
+                                )
+                            }
                         }
-                    )
+                    }
+                } else {
+                    items(displayMessages, key = { it.id }) { msg ->
+                        AiTabBubble(
+                            message = msg,
+                            onCopy = {
+                                clipboardManager.setText(AnnotatedString(msg.content))
+                                VibrationHelper.vibrate(context, 10)
+                            }
+                        )
+                    }
                 }
 
-                if (isGenerating) {
+                // Loading State
+                if (geminiState is GeminiQueryState.Loading) {
                     item {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -286,10 +391,69 @@ fun AiAssistantTab(
                                 strokeWidth = 2.dp
                             )
                             Text(
-                                text = "AI is thinking & analyzing notes...",
+                                text = "Gemini is analyzing & generating answer...",
                                 fontSize = 13.sp,
                                 color = colors.textSecondary
                             )
+                        }
+                    }
+                }
+
+                // Error State with Retry
+                if (geminiState is GeminiQueryState.Error) {
+                    item {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color(0xFFEF4444).copy(alpha = 0.12f))
+                                .border(1.dp, Color(0xFFEF4444).copy(alpha = 0.3f), RoundedCornerShape(16.dp))
+                                .padding(14.dp)
+                        ) {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Warning,
+                                        contentDescription = "Error",
+                                        tint = Color(0xFFEF4444),
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Text(
+                                        text = "Query Failed",
+                                        fontSize = 14.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFEF4444)
+                                    )
+                                }
+                                Text(
+                                    text = geminiState.message,
+                                    fontSize = 12.5.sp,
+                                    color = colors.textSecondary
+                                )
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.End
+                                ) {
+                                    TextButton(
+                                        onClick = {
+                                            if (geminiState.prompt.isNotBlank()) {
+                                                onSendChatPrompt(geminiState.prompt)
+                                            }
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Refresh,
+                                            contentDescription = "Retry",
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Retry")
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -329,7 +493,7 @@ fun AiAssistantTab(
                         singleLine = false,
                         maxLines = 3,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                        keyboardActions = KeyboardActions(onSend = { sendMessage(inputPrompt) }),
+                        keyboardActions = KeyboardActions(onSend = { sendUserPrompt(inputPrompt) }),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = Color.Transparent,
                             unfocusedBorderColor = Color.Transparent,
@@ -343,16 +507,16 @@ fun AiAssistantTab(
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
-                            .background(if (inputPrompt.isNotBlank()) colors.pastelBlue else colors.field)
-                            .clickable(enabled = inputPrompt.isNotBlank()) {
-                                sendMessage(inputPrompt)
+                            .background(if (inputPrompt.isNotBlank() && geminiState !is GeminiQueryState.Loading) colors.pastelBlue else colors.field)
+                            .clickable(enabled = inputPrompt.isNotBlank() && geminiState !is GeminiQueryState.Loading) {
+                                sendUserPrompt(inputPrompt)
                             },
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.Send,
                             contentDescription = "Send",
-                            tint = if (inputPrompt.isNotBlank()) Color.White else colors.textTertiary,
+                            tint = if (inputPrompt.isNotBlank() && geminiState !is GeminiQueryState.Loading) Color.White else colors.textTertiary,
                             modifier = Modifier.size(18.dp)
                         )
                     }
@@ -360,16 +524,133 @@ fun AiAssistantTab(
             }
         }
     }
+
+    // API Key Dialog with Test Connection Button
+    if (showApiKeyDialog) {
+        AlertDialog(
+            onDismissRequest = { showApiKeyDialog = false },
+            title = {
+                Text(
+                    text = "Gemini API Configuration",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colors.text
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(
+                        text = "Enter your Google Gemini API key to activate AI note search, summarization, and chat assistant features.",
+                        fontSize = 13.sp,
+                        color = colors.textSecondary
+                    )
+                    OutlinedTextField(
+                        value = apiKeyDraft,
+                        onValueChange = {
+                            apiKeyDraft = it
+                            testResultText = null
+                        },
+                        label = { Text("API Key (starts with AIzaSy...)") },
+                        placeholder = { Text("AIzaSy...") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Test connection row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    isTestingConnection = true
+                                    testResultText = null
+                                    val keyToTest = apiKeyDraft.trim()
+                                    if (!GeminiClient.isValidGeminiApiKey(keyToTest)) {
+                                        testResultText = "❌ Invalid API key format"
+                                        isTestingConnection = false
+                                        return@launch
+                                    }
+                                    val models = GeminiClient.fetchLiveModels(keyToTest)
+                                    if (models.isNotEmpty()) {
+                                        testResultText = "✅ Connected! Models available: ${models.take(2).joinToString()}"
+                                    } else {
+                                        testResultText = "❌ Connection failed. Verify key or internet."
+                                    }
+                                    isTestingConnection = false
+                                }
+                            },
+                            enabled = !isTestingConnection
+                        ) {
+                            if (isTestingConnection) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(14.dp),
+                                    strokeWidth = 2.dp,
+                                    color = colors.pastelBlue
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Testing...")
+                            } else {
+                                Text("Test Connection")
+                            }
+                        }
+
+                        TextButton(
+                            onClick = {
+                                try {
+                                    val intent = android.content.Intent(
+                                        android.content.Intent.ACTION_VIEW,
+                                        android.net.Uri.parse("https://aistudio.google.com/app/apikey")
+                                    )
+                                    context.startActivity(intent)
+                                } catch (_: Exception) {}
+                            }
+                        ) {
+                            Text("Get Free Key ↗")
+                        }
+                    }
+
+                    testResultText?.let { res ->
+                        Text(
+                            text = res,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (res.startsWith("✅")) Color(0xFF10B981) else Color(0xFFEF4444)
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onSetGeminiApiKey(apiKeyDraft.trim())
+                        showApiKeyDialog = false
+                    }
+                ) {
+                    Text("Save Key", fontWeight = FontWeight.Bold, color = colors.pastelBlue)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showApiKeyDialog = false }) {
+                    Text("Cancel", color = colors.textSecondary)
+                }
+            },
+            containerColor = colors.card,
+            textContentColor = colors.text
+        )
+    }
 }
 
 @Composable
-fun ChatBubble(
+fun AiTabBubble(
     message: ChatMessage,
     onCopy: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val colors = GlassTheme.colors
-    val isUser = message.sender == MessageSender.USER
+    val isUser = message.sender == "user"
 
     Row(
         modifier = modifier.fillMaxWidth(),
@@ -415,7 +696,7 @@ fun ChatBubble(
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = message.text,
+                    text = message.content,
                     fontSize = 14.sp,
                     lineHeight = 20.sp,
                     color = if (isUser) Color.White else colors.text
@@ -441,57 +722,5 @@ fun ChatBubble(
                 }
             }
         }
-    }
-}
-
-private fun generateSmartStudyAnswer(prompt: String): String {
-    val p = prompt.lowercase()
-    return when {
-        p.contains("photosynthesis") ->
-            "🌿 **Photosynthesis Summary**:\n\n" +
-            "• **Equation**: 6CO₂ + 6H₂O + Sunlight ➔ C₆H₁₂O₆ + 6O₂\n" +
-            "• **Light Reactions**: Occur in thylakoids; photolysis of water yields ATP, NADPH, and O₂.\n" +
-            "• **Calvin Cycle**: Occurs in stroma; RuBisCO enzyme fixes CO₂ into glucose.\n\n" +
-            "💡 *Exam Tip*: Remember that light reactions provide the chemical energy (ATP/NADPH) required for the dark reactions."
-
-        p.contains("human reproduction") || p.contains("reproduction") ->
-            "🧬 **Human Reproduction High-Yield Points**:\n\n" +
-            "1. **Male System**: Testes in scrotum (2–2.5°C cooler for spermatogenesis). Leydig cells secrete testosterone.\n" +
-            "2. **Female System**: Ovaries produce ova; fertilization takes place at the ampullary-isthmic junction of fallopian tubes.\n" +
-            "3. **Implantation**: Morula transforms into blastocyst and embeds into the endometrium on ~day 7."
-
-        p.contains("chemical bonding") || p.contains("bonding") ->
-            "⚛️ **Chemical Bonding Core Review**:\n\n" +
-            "• **Ionic**: Electrostatic attraction between cations and anions (e.g. NaCl).\n" +
-            "• **Covalent**: Sharing of electron pairs (e.g. CH₄, H₂O).\n" +
-            "• **VSEPR**: Predicts molecular geometries (Linear 180°, Trigonal Planar 120°, Tetrahedral 109.5°).\n" +
-            "• **Hybridization**: sp³ (tetrahedral), sp² (planar), sp (linear)."
-
-        p.contains("question") || p.contains("exam") ->
-            "📝 **Top 3 High-Frequency Exam Questions**:\n\n" +
-            "1. Differentiate between Light-Dependent and Light-Independent reactions in chloroplasts.\n" +
-            "2. State and derive the work-energy theorem using calculus.\n" +
-            "3. Explain the VSEPR theory and predict the geometry of ammonia (NH₃) and water (H₂O)."
-
-        p.contains("newton") || p.contains("motion") || p.contains("kinematics") ->
-            "🚀 **Newton's Laws & Kinematics**:\n\n" +
-            "• **1st Law**: Law of Inertia (objects stay at rest or constant velocity unless acted on by net force).\n" +
-            "• **2nd Law**: F = dp/dt = m · a\n" +
-            "• **3rd Law**: Action = -Reaction\n" +
-            "• **Motion**: v = u + at, s = ut + ½at², v² = u² + 2as"
-
-        p.contains("summarize") ->
-            "📋 **Document Key Summary**:\n\n" +
-            "• Core Theme: Fundamental scientific definitions and formulas.\n" +
-            "• Key Takeaways: Complete classification, step-by-step mechanisms, and practical diagrams.\n" +
-            "• Action Items: Review end-of-chapter practice questions and memorize bolded formulas."
-
-        else ->
-            "✨ **Study Insight** on *\"$prompt\"*:\n\n" +
-            "This topic has been indexed across your study library. Here are the core concepts:\n" +
-            "• Master the basic terminology and units.\n" +
-            "• Practice 2-3 numerical or diagrammatic questions daily.\n" +
-            "• Create active recall flashcards for formula memorization.\n\n" +
-            "Would you like me to generate a 5-question quick quiz on this topic?"
     }
 }

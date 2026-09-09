@@ -475,7 +475,7 @@ fun LibraryTab(
                     }
                 } else {
                     items(folderNotes, key = { it.id }) { note ->
-                        RecentNoteCard(
+                        SwipeableRecentNoteWrapper(
                             note = note,
                             onClick = { onNoteClick(note.id) },
                             onTogglePin = { onTogglePin(note.id) },

@@ -68,6 +68,12 @@ fun AnimatedBackupDialog(
     var backupState by remember { mutableStateOf(BackupState.IDLE) }
     var rawProgress by remember { mutableFloatStateOf(0f) }
 
+    LaunchedEffect(backupState) {
+        if (backupState == BackupState.PROCESSING) {
+            viewModel.exportBackupJson { }
+        }
+    }
+
     val animatedProgress by animateFloatAsState(
         targetValue = rawProgress,
         animationSpec = tween(durationMillis = 300),

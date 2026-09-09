@@ -1,5 +1,7 @@
 package com.example.ui.screens.reader
 
+import com.example.ui.editor.HtmlPreviewView
+
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.fadeIn
@@ -81,7 +83,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.model.NoteEntity
-import com.example.ui.components.PhotosynthesisDiagram
 import com.example.ui.theme.GlassTheme
 import com.example.ui.util.AmbientBackground
 import kotlinx.coroutines.launch
@@ -412,100 +413,20 @@ fun HtmlNoteReaderScreen(
                 modifier = Modifier
                     .weight(1f)
                     .fillMaxWidth(),
-                userScrollEnabled = true
+                userScrollEnabled = false
             ) { page ->
                 when (ReaderSegmentTab.entries[page]) {
                     ReaderSegmentTab.READ -> {
-                        LazyColumn(
-                            modifier = Modifier.fillMaxSize(),
-                            contentPadding = PaddingValues(start = 20.dp, end = 20.dp, top = 12.dp, bottom = navBarBottom + 100.dp),
-                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
                         ) {
-                            // Title header inside reader
-                            item {
-                                Column {
-                                    Text(
-                                        text = note.displayTitle,
-                                        fontSize = (24 * fontSizeMultiplier).sp,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        color = readerTx,
-                                        letterSpacing = (-0.5).sp
-                                    )
-                                    Spacer(modifier = Modifier.height(4.dp))
-                                    Text(
-                                        text = "${note.category ?: "Study Note"} • 18 pages • Formatted HTML",
-                                        fontSize = 13.sp,
-                                        color = colors.textSecondary
-                                    )
-                                }
-                            }
-
-                            // Embedded educational diagram (Photosynthesis or scientific schematic)
-                            item {
-                                PhotosynthesisDiagram()
-                            }
-
-                            // Key Formula / Highlight Card
-                            item {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .shadow(4.dp, RoundedCornerShape(18.dp), ambientColor = colors.shadow)
-                                        .clip(RoundedCornerShape(18.dp))
-                                        .background(if (readingMode == ReadingThemeMode.DARK) Color(0xFF1E3A2B) else Color(0xFFE8F7EC))
-                                        .border(1.dp, colors.pastelMint.copy(alpha = 0.3f), RoundedCornerShape(18.dp))
-                                        .padding(16.dp)
-                                ) {
-                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text(
-                                            text = "⚡ Key Chemical Equation",
-                                            fontSize = 14.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = if (readingMode == ReadingThemeMode.DARK) Color(0xFF4ADE80) else Color(0xFF15803D)
-                                        )
-                                        Text(
-                                            text = "6CO₂ + 6H₂O + Sunlight ➔ C₆H₁₂O₆ + 6O₂",
-                                            fontSize = (15 * fontSizeMultiplier).sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                            fontFamily = FontFamily.Monospace,
-                                            color = readerTx
-                                        )
-                                    }
-                                }
-                            }
-
-                            // Formatted Chapter 1
-                            item {
-                                ChapterSection(
-                                    number = "1",
-                                    title = "Introduction & Overview",
-                                    content = "Photosynthesis is the foundational biochemical process supporting virtually all life on Earth. Green plants and autotrophs absorb solar radiation to convert inorganic carbon dioxide and water into chemical energy in the form of hexose sugars.",
-                                    fontSizeMultiplier = fontSizeMultiplier,
-                                    readerTx = readerTx
-                                )
-                            }
-
-                            // Formatted Chapter 2
-                            item {
-                                ChapterSection(
-                                    number = "2",
-                                    title = "Two Stages of Reactions",
-                                    content = "1. Light-Dependent Reactions: Carried out in the thylakoid membranes, solar photons split H₂O molecules (photolysis) generating high-energy ATP, NADPH, and discharging breathable O₂.\n\n2. Light-Independent Reactions (Calvin Cycle): In the chloroplast stroma, enzyme RuBisCO facilitates carbon fixation into 3-phosphoglycerate, creating stable glucose molecules.",
-                                    fontSizeMultiplier = fontSizeMultiplier,
-                                    readerTx = readerTx
-                                )
-                            }
-
-                            // Formatted Chapter 3
-                            item {
-                                ChapterSection(
-                                    number = "3",
-                                    title = "Limiting Factors & Ecological Impact",
-                                    content = "Blackman's Law determines the rate of photosynthetic activity based on light irradiance, temperature spectrum (20°C - 35°C optimum), and ambient CO₂ ppm concentration.",
-                                    fontSizeMultiplier = fontSizeMultiplier,
-                                    readerTx = readerTx
-                                )
-                            }
+                            HtmlPreviewView(
+                                htmlContent = if (note.content.isNotBlank()) note.content else "<h1>${note.displayTitle}</h1><p>No HTML content recorded yet.</p>",
+                                fontSize = (16 * fontSizeMultiplier).toInt(),
+                                isZenMode = isFullScreen
+                            )
                         }
                     }
 

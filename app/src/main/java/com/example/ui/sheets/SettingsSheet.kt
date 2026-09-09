@@ -46,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -489,6 +490,61 @@ fun SettingsSheet(
                                 ) {
                                     Text("Get Free Key ↗")
                                 }
+                            }
+
+                            // Test Connection Row
+                            var isTestingConnection by remember { mutableStateOf(false) }
+                            var testResultText by remember { mutableStateOf<String?>(null) }
+                            val scope = androidx.compose.runtime.rememberCoroutineScope()
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TextButton(
+                                    onClick = {
+                                        scope.launch {
+                                            isTestingConnection = true
+                                            testResultText = null
+                                            val keyToTest = apiKeyDraft.trim()
+                                            if (!GeminiClient.isValidGeminiApiKey(keyToTest)) {
+                                                testResultText = "❌ Invalid API key format"
+                                                isTestingConnection = false
+                                                return@launch
+                                            }
+                                            val models = GeminiClient.fetchLiveModels(keyToTest)
+                                            if (models.isNotEmpty()) {
+                                                testResultText = "✅ Connected! Models: ${models.take(2).joinToString()}"
+                                            } else {
+                                                testResultText = "❌ Connection failed. Check key or network."
+                                            }
+                                            isTestingConnection = false
+                                        }
+                                    },
+                                    enabled = !isTestingConnection
+                                ) {
+                                    if (isTestingConnection) {
+                                        androidx.compose.material3.CircularProgressIndicator(
+                                            modifier = Modifier.size(12.dp),
+                                            strokeWidth = 2.dp,
+                                            color = Color(0xFF3B82F6)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Testing...", fontSize = 12.sp)
+                                    } else {
+                                        Text("Test Connection", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+
+                            testResultText?.let { res ->
+                                Text(
+                                    text = res,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = if (res.startsWith("✅")) Color(0xFF10B981) else Color(0xFFEF4444)
+                                )
                             }
                         }
                     },

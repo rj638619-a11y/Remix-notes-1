@@ -239,7 +239,8 @@ fun AnimatedNotesListScreen(
                                     index = index,
                                     reduceTransparency = settings.reduceTransparency,
                                     onOpenNote = onOpenNote,
-                                    onDeleteNote = { viewModel.moveToTrash(note.id) }
+                                    onDeleteNote = { viewModel.moveToTrash(note.id) },
+                                    onTogglePin = { viewModel.togglePin(note.id) }
                                 )
                             }
                         }
@@ -255,7 +256,8 @@ fun AnimatedNotesListScreen(
                                     index = index,
                                     reduceTransparency = settings.reduceTransparency,
                                     onOpenNote = onOpenNote,
-                                    onDeleteNote = { viewModel.moveToTrash(note.id) }
+                                    onDeleteNote = { viewModel.moveToTrash(note.id) },
+                                    onTogglePin = { viewModel.togglePin(note.id) }
                                 )
                             }
                         }
@@ -287,7 +289,8 @@ private fun NoteCardWrapper(
     index: Int,
     reduceTransparency: Boolean,
     onOpenNote: (String) -> Unit,
-    onDeleteNote: () -> Unit
+    onDeleteNote: () -> Unit,
+    onTogglePin: () -> Unit
 ) {
     var isDismissed by remember { mutableStateOf(false) }
 
@@ -297,6 +300,9 @@ private fun NoteCardWrapper(
                 isDismissed = true
                 onDeleteNote()
                 true
+            } else if (value == SwipeToDismissBoxValue.StartToEnd) {
+                onTogglePin()
+                false // Retract card after pin toggle
             } else false
         }
     )
@@ -308,22 +314,69 @@ private fun NoteCardWrapper(
         SwipeToDismissBox(
             state = dismissState,
             backgroundContent = {
+                val direction = dismissState.dismissDirection
+                val isStartToEnd = direction == SwipeToDismissBoxValue.StartToEnd
+                val isEndToStart = direction == SwipeToDismissBoxValue.EndToStart
+
+                val backgroundColor = when {
+                    isStartToEnd -> MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                    isEndToStart -> Color(0xFFEF4444).copy(alpha = 0.8f)
+                    else -> Color.Transparent
+                }
+
+                val alignment = when {
+                    isStartToEnd -> Alignment.CenterStart
+                    isEndToStart -> Alignment.CenterEnd
+                    else -> Alignment.Center
+                }
+
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(RoundedCornerShape(20.dp))
-                        .background(Color(0xFFEF4444).copy(alpha = 0.8f))
+                        .background(backgroundColor)
                         .padding(horizontal = 20.dp),
-                    contentAlignment = Alignment.CenterEnd
+                    contentAlignment = alignment
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Clear,
-                        contentDescription = "Delete",
-                        tint = Color.White
-                    )
+                    if (isStartToEnd) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.PushPin,
+                                contentDescription = if (note.pinned) "Unpin" else "Pin",
+                                tint = Color.White
+                            )
+                            Text(
+                                text = if (note.pinned) "Unpin" else "Pin",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    } else if (isEndToStart) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Move to Trash",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                            Icon(
+                                imageVector = Icons.Default.Clear,
+                                contentDescription = "Delete",
+                                tint = Color.White
+                            )
+                        }
+                    }
                 }
             },
-            enableDismissFromStartToEnd = false,
+            enableDismissFromStartToEnd = true,
+            enableDismissFromEndToStart = true,
             content = {
                 NoteCard(
                     note = note,

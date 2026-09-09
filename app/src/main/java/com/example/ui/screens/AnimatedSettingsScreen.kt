@@ -36,7 +36,15 @@ import androidx.compose.material.icons.filled.Vibration
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import android.content.pm.PackageManager
+import android.Manifest
+import android.os.Build
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -63,9 +71,35 @@ fun AnimatedSettingsScreen(
     onBack: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
     val settings by viewModel.settings.collectAsState()
 
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            viewModel.syncFullDevice()
+        } else {
+            android.widget.Toast.makeText(
+                context,
+                "Storage permission is required to sync local files.",
+                android.widget.Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    val hasStoragePermission = if (Build.VERSION.SDK_INT >= 33) {
+        // Android 13+ does not support standard READ_EXTERNAL_STORAGE runtime permission
+        true
+    } else {
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.READ_EXTERNAL_STORAGE
+        ) == PackageManager.PERMISSION_GRANTED
+    }
+
     var showClearDataDialog by remember { mutableStateOf(false) }
+    var showBackupDialog by remember { mutableStateOf(false) }
     var isThemeSectionExpanded by remember { mutableStateOf(false) }
     var isSecuritySectionExpanded by remember { mutableStateOf(false) }
 
@@ -274,9 +308,10 @@ fun AnimatedSettingsScreen(
             Spacer(modifier = Modifier.height(16.dp))
 
             // 3. Sync & Cloud
-            Row(
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .animateContentSize()
                     .glassCard(
                         blurRadius = 20.dp,
                         cornerRadius = 24.dp,
@@ -285,19 +320,70 @@ fun AnimatedSettingsScreen(
                         reduceTransparency = settings.reduceTransparency
                     )
                     .padding(16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Sync, contentDescription = null, tint = Color(0xFF3B82F6))
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text("Auto Cloud Sync", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Sync, contentDescription = null, tint = Color(0xFF3B82F6))
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text("Auto Cloud Sync", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+                    SpringSwitch(
+                        checked = settings.autoSync,
+                        onCheckedChange = { viewModel.setAutoSync(it) },
+                        hapticsEnabled = settings.hapticsEnabled
+                    )
                 }
-                SpringSwitch(
-                    checked = settings.autoSync,
-                    onCheckedChange = { viewModel.setAutoSync(it) },
-                    hapticsEnabled = settings.hapticsEnabled
-                )
+
+                var apiKeyInput by remember(settings.geminiApiKey) { mutableStateOf(settings.geminiApiKey) }
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text("Gemini API Key", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = apiKeyInput,
+                        onValueChange = {
+                            apiKeyInput = it
+                            viewModel.setGeminiApiKey(it)
+                        },
+                        placeholder = { Text("Paste AI Studio API Key") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    BouncyHapticButton(
+                        text = "Sync Device Files",
+                        onClick = {
+                            if (hasStoragePermission) {
+                                viewModel.syncFullDevice()
+                            } else {
+                                permissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+                            }
+                        },
+                        hapticsEnabled = settings.hapticsEnabled,
+                        containerColor = Color(0xFF3B82F6).copy(alpha = 0.2f),
+                        contentColor = Color(0xFF3B82F6),
+                        modifier = Modifier.weight(1f)
+                    )
+
+                    BouncyHapticButton(
+                        text = "Backup / Restore",
+                        onClick = { showBackupDialog = true },
+                        hapticsEnabled = settings.hapticsEnabled,
+                        containerColor = Color.White.copy(alpha = 0.15f),
+                        contentColor = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(32.dp))
@@ -357,5 +443,11 @@ fun AnimatedSettingsScreen(
                 }
             }
         }
+
+        AnimatedBackupDialog(
+            visible = showBackupDialog,
+            onDismiss = { showBackupDialog = false },
+            viewModel = viewModel
+        )
     }
 }

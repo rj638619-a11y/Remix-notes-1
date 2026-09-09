@@ -43,10 +43,11 @@ import com.example.data.model.NoteSummary
 import com.example.ui.components.MainTab
 import com.example.ui.components.NotesBottomBar
 import com.example.ui.editor.NoteEditorScreen
+import com.example.ui.screens.AnimatedTrashScreen
 import com.example.ui.screens.SearchScreen
 import com.example.ui.screens.SplashScreen
 import com.example.ui.screens.reader.HtmlNoteReaderScreen
-import com.example.ui.screens.reader.PdfReaderScreen
+import com.example.ui.editor.PdfRendererView
 import com.example.ui.screens.tabs.AiAssistantTab
 import com.example.ui.screens.tabs.HomeTab
 import com.example.ui.screens.tabs.LibraryTab
@@ -67,6 +68,7 @@ sealed interface ActiveScreen {
     data class Editor(val note: NoteEntity) : ActiveScreen
     object Search : ActiveScreen
     object SettingsOverlay : ActiveScreen
+    object Trash : ActiveScreen
 }
 
 @Composable
@@ -102,6 +104,11 @@ fun HomeScreen(
     val allNotes by viewModel.allNotes.collectAsStateWithLifecycle()
     val allNoteSummaries by viewModel.allNoteSummaries.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val chatSessions by viewModel.chatSessions.collectAsStateWithLifecycle()
+    val activeChatSession by viewModel.activeChatSession.collectAsStateWithLifecycle()
+    val geminiState by viewModel.geminiState.collectAsStateWithLifecycle()
+    val chatSelectedModel by viewModel.chatSelectedModel.collectAsStateWithLifecycle()
+    val chatDetailedAnswers by viewModel.chatDetailedAnswers.collectAsStateWithLifecycle()
 
     val noteSummaries: List<NoteSummary> = remember(allNotes, allNoteSummaries) {
         if (allNoteSummaries.isNotEmpty()) allNoteSummaries else allNotes.map { it.toSummary() }
@@ -169,7 +176,7 @@ fun HomeScreen(
                 targetState = currentScreen,
                 transitionSpec = {
                     when {
-                        targetState is ActiveScreen.ReaderHtml || targetState is ActiveScreen.ReaderPdf || targetState is ActiveScreen.Editor || targetState is ActiveScreen.Search || targetState is ActiveScreen.SettingsOverlay -> {
+                        targetState is ActiveScreen.ReaderHtml || targetState is ActiveScreen.ReaderPdf || targetState is ActiveScreen.Editor || targetState is ActiveScreen.Search || targetState is ActiveScreen.SettingsOverlay || targetState is ActiveScreen.Trash -> {
                             (slideInVertically { it / 3 } + fadeIn()).togetherWith(slideOutVertically { -it / 3 } + fadeOut())
                         }
                         else -> {
@@ -185,7 +192,7 @@ fun HomeScreen(
                             HorizontalPager(
                                 state = pagerState,
                                 modifier = Modifier.fillMaxSize(),
-                                userScrollEnabled = true,
+                                userScrollEnabled = false,
                                 pageSpacing = 0.dp
                             ) { page ->
                                 val pageOffset = ((pagerState.currentPage - page) + pagerState.currentPageOffsetFraction).absoluteValue
@@ -234,6 +241,20 @@ fun HomeScreen(
 
                                         MainTab.AI -> {
                                             AiAssistantTab(
+                                                chatSessions = chatSessions,
+                                                activeChatSession = activeChatSession,
+                                                geminiState = geminiState,
+                                                geminiApiKey = settings.geminiApiKey,
+                                                chatSelectedModel = chatSelectedModel,
+                                                chatDetailedAnswers = chatDetailedAnswers,
+                                                onSendChatPrompt = { prompt -> viewModel.sendChatPrompt(prompt) },
+                                                onStartNewChat = { viewModel.startNewChatSession() },
+                                                onSelectChatSession = { id -> viewModel.setActiveChatSession(id) },
+                                                onDeleteChatSession = { id -> viewModel.deleteChatSession(id) },
+                                                onClearAllChats = { viewModel.clearAllChatSessions() },
+                                                onSetGeminiApiKey = { key -> viewModel.setGeminiApiKey(key) },
+                                                onSetChatDetailedAnswers = { detailed -> viewModel.setChatDetailedAnswers(detailed) },
+                                                onSetChatSelectedModel = { model -> viewModel.setChatSelectedModel(model) },
                                                 initialPrompt = aiInitialPrompt
                                             )
                                         }
@@ -269,7 +290,7 @@ fun HomeScreen(
                                                     homeFilter = QuickCategoryFilter.FAVORITES
                                                 },
                                                 onOpenTrash = {
-                                                    currentTab = MainTab.LIBRARY
+                                                    currentScreen = ActiveScreen.Trash
                                                 }
                                             )
                                         }
@@ -316,18 +337,16 @@ fun HomeScreen(
 
                     is ActiveScreen.ReaderPdf -> {
                         BackHandler { currentScreen = ActiveScreen.Main(currentTab) }
-                        PdfReaderScreen(
+                        PdfRendererView(
                             note = screen.note,
                             onBack = { currentScreen = ActiveScreen.Main(currentTab) },
-                            onOpenAiAssistant = { prompt ->
+                            onSaveTitle = { title ->
+                                viewModel.saveNote(screen.note.id, title, screen.note.content)
+                            },
+                            onAskGemini = { prompt, _ ->
                                 aiInitialPrompt = prompt
                                 currentTab = MainTab.AI
                                 currentScreen = ActiveScreen.Main(MainTab.AI)
-                            },
-                            onToggleBookmark = { noteId -> viewModel.togglePin(noteId) },
-                            onDelete = {
-                                viewModel.deleteNote(screen.note.id)
-                                currentScreen = ActiveScreen.Main(currentTab)
                             }
                         )
                     }
@@ -372,6 +391,14 @@ fun HomeScreen(
                             onSyncFullDevice = { viewModel.syncFullDevice() },
                             geminiApiKey = settings.geminiApiKey,
                             onUpdateApiKey = { key -> viewModel.setGeminiApiKey(key) }
+                        )
+                    }
+
+                    is ActiveScreen.Trash -> {
+                        BackHandler { currentScreen = ActiveScreen.Main(currentTab) }
+                        AnimatedTrashScreen(
+                            viewModel = viewModel,
+                            onBack = { currentScreen = ActiveScreen.Main(currentTab) }
                         )
                     }
                 }

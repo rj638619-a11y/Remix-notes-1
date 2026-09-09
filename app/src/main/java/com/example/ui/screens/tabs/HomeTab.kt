@@ -47,6 +47,15 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.tween
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -324,7 +333,7 @@ fun HomeTab(
                 }
             } else {
                 items(filteredNotes, key = { it.id }) { note ->
-                    RecentNoteCard(
+                    SwipeableRecentNoteWrapper(
                         note = note,
                         onClick = { onNoteClick(note.id) },
                         onTogglePin = { onTogglePin(note.id) },
@@ -518,35 +527,125 @@ fun RecentNoteCard(
                 }
             }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                // Pin / Favorite Icon Button
-                IconButton(
-                    onClick = onTogglePin,
-                    modifier = Modifier.size(36.dp)
-                ) {
-                    Icon(
-                        imageVector = if (note.pinned) Icons.Default.Star else Icons.Outlined.StarBorder,
-                        contentDescription = if (note.pinned) "Unpin" else "Pin",
-                        tint = if (note.pinned) colors.pastelFavYellow else colors.textTertiary,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-
-                if (onDelete != null) {
-                    IconButton(
-                        onClick = onDelete,
-                        modifier = Modifier.size(36.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Delete,
-                            contentDescription = "Delete",
-                            tint = Color(0xFFEF4444).copy(alpha = 0.85f),
-                            modifier = Modifier.size(19.dp)
-                        )
-                    }
-                }
+            if (note.pinned) {
+                Icon(
+                    imageVector = Icons.Default.Star,
+                    contentDescription = "Pinned",
+                    tint = colors.pastelFavYellow,
+                    modifier = Modifier.size(20.dp)
+                )
             }
         }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SwipeableRecentNoteWrapper(
+    note: NoteSummary,
+    onClick: () -> Unit,
+    onTogglePin: () -> Unit,
+    onDelete: (() -> Unit)?,
+    modifier: Modifier = Modifier
+) {
+    val colors = GlassTheme.colors
+    var isDismissed by remember { mutableStateOf(false) }
+
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                if (onDelete != null) {
+                    isDismissed = true
+                    onDelete()
+                    true
+                } else false
+            } else if (value == SwipeToDismissBoxValue.StartToEnd) {
+                onTogglePin()
+                false // Retract/animate back smoothly after toggle
+            } else false
+        }
+    )
+
+    AnimatedVisibility(
+        visible = !isDismissed,
+        exit = shrinkVertically(animationSpec = tween(300))
+    ) {
+        SwipeToDismissBox(
+            state = dismissState,
+            backgroundContent = {
+                val direction = dismissState.dismissDirection
+                val isStartToEnd = direction == SwipeToDismissBoxValue.StartToEnd
+                val isEndToStart = direction == SwipeToDismissBoxValue.EndToStart
+
+                val backgroundColor = when {
+                    isStartToEnd -> colors.pastelBlue.copy(alpha = 0.22f)
+                    isEndToStart -> Color(0xFFEF4444).copy(alpha = 0.22f)
+                    else -> Color.Transparent
+                }
+
+                val alignment = when {
+                    isStartToEnd -> Alignment.CenterStart
+                    isEndToStart -> Alignment.CenterEnd
+                    else -> Alignment.Center
+                }
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(22.dp))
+                        .background(backgroundColor)
+                        .padding(horizontal = 24.dp),
+                    contentAlignment = alignment
+                ) {
+                    if (isStartToEnd) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = if (note.pinned) "Unstar" else "Star",
+                                tint = colors.pastelBlue
+                            )
+                            Text(
+                                text = if (note.pinned) "Unstar" else "Star",
+                                color = colors.pastelBlue,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    } else if (isEndToStart) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Move to Trash",
+                                color = Color(0xFFEF4444),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                tint = Color(0xFFEF4444)
+                            )
+                        }
+                    }
+                }
+            },
+            enableDismissFromStartToEnd = true,
+            enableDismissFromEndToStart = onDelete != null,
+            modifier = modifier.fillMaxWidth(),
+            content = {
+                RecentNoteCard(
+                    note = note,
+                    onClick = onClick,
+                    onTogglePin = onTogglePin,
+                    onDelete = onDelete
+                )
+            }
+        )
     }
 }
 

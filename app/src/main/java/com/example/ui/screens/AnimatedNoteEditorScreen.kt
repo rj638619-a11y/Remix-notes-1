@@ -53,9 +53,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.animations.BouncyHapticButton
 import com.example.ui.animations.rememberBouncyClick
+import com.example.ui.editor.HtmlPreviewView
+import com.example.ui.editor.PdfRendererView
 import com.example.ui.effects.GlassBottomSheet
 import com.example.ui.effects.glassCard
 import com.example.ui.viewmodel.NotesViewModel
+import androidx.compose.material.icons.filled.AutoAwesome
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -85,6 +88,19 @@ fun AnimatedNoteEditorScreen(
 
     LaunchedEffect(scrollState.value) {
         isToolbarVisible.value = scrollState.value < 100 || !scrollState.isScrollInProgress
+    }
+
+    androidx.activity.compose.BackHandler {
+        if (title.isNotBlank() || content.isNotBlank()) {
+            if (noteId.isNotBlank()) {
+                viewModel.saveNote(noteId, title, content)
+            } else {
+                viewModel.createNote { newId ->
+                    viewModel.saveNote(newId, title, content)
+                }
+            }
+        }
+        onBack()
     }
 
     Box(modifier = modifier.fillMaxSize()) {
@@ -237,31 +253,50 @@ fun AnimatedNoteEditorScreen(
                     label = "ReaderModeCrossfade"
                 ) { reader ->
                     if (reader) {
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .verticalScroll(scrollState)
-                                .glassCard(
-                                    blurRadius = 16.dp,
-                                    cornerRadius = 24.dp,
-                                    tint = Color.White.copy(alpha = 0.05f),
-                                    reduceTransparency = settings.reduceTransparency
+                        when {
+                            existingNote?.type == "pdf" -> {
+                                PdfRendererView(
+                                    note = existingNote,
+                                    onBack = onBack,
+                                    onAskGemini = { prompt, _ -> viewModel.sendChatPrompt(prompt) }
                                 )
-                                .padding(20.dp)
-                        ) {
-                            Text(
-                                text = title.ifBlank { "Untitled Note" },
-                                fontSize = 26.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onBackground
-                            )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text(
-                                text = content,
-                                fontSize = 16.sp,
-                                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f),
-                                lineHeight = 24.sp
-                            )
+                            }
+                            existingNote?.type == "html" || content.trim().startsWith("<html", ignoreCase = true) || content.contains("<!DOCTYPE html>", ignoreCase = true) -> {
+                                HtmlPreviewView(
+                                    htmlContent = content,
+                                    fontSize = settings.readingFontSize,
+                                    isZenMode = false,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                            else -> {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .verticalScroll(scrollState)
+                                        .glassCard(
+                                            blurRadius = 16.dp,
+                                            cornerRadius = 24.dp,
+                                            tint = Color.White.copy(alpha = 0.05f),
+                                            reduceTransparency = settings.reduceTransparency
+                                        )
+                                        .padding(20.dp)
+                                ) {
+                                    Text(
+                                        text = title.ifBlank { "Untitled Note" },
+                                        fontSize = 26.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onBackground
+                                    )
+                                    Spacer(modifier = Modifier.height(16.dp))
+                                    Text(
+                                        text = content,
+                                        fontSize = 16.sp,
+                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f),
+                                        lineHeight = 24.sp
+                                    )
+                                }
+                            }
                         }
                     } else {
                         Column(

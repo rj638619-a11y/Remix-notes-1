@@ -46,6 +46,7 @@ import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -60,7 +61,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -533,6 +536,61 @@ fun SettingsTab(
                                 Text("Clear Key", fontSize = 12.sp, color = colors.pastelPdfRed)
                             }
                         }
+                    }
+
+                    // Test Connection Button
+                    var isTestingConnection by remember { mutableStateOf(false) }
+                    var testConnectionResult by remember { mutableStateOf<String?>(null) }
+                    val coroutineScope = rememberCoroutineScope()
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = {
+                                coroutineScope.launch {
+                                    isTestingConnection = true
+                                    testConnectionResult = null
+                                    val keyToTest = apiKeyDraft.trim()
+                                    if (!GeminiClient.isValidGeminiApiKey(keyToTest)) {
+                                        testConnectionResult = "❌ Invalid API key format"
+                                        isTestingConnection = false
+                                        return@launch
+                                    }
+                                    val models = GeminiClient.fetchLiveModels(keyToTest)
+                                    if (models.isNotEmpty()) {
+                                        testConnectionResult = "✅ Connected! Models: ${models.take(2).joinToString()}"
+                                    } else {
+                                        testConnectionResult = "❌ Connection failed. Verify key or network."
+                                    }
+                                    isTestingConnection = false
+                                }
+                            },
+                            enabled = !isTestingConnection
+                        ) {
+                            if (isTestingConnection) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(12.dp),
+                                    strokeWidth = 2.dp,
+                                    color = colors.pastelLavender
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Testing...", fontSize = 12.sp)
+                            } else {
+                                Text("Test Connection", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    testConnectionResult?.let { result ->
+                        Text(
+                            text = result,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (result.startsWith("✅")) Color(0xFF10B981) else Color(0xFFEF4444)
+                        )
                     }
                 }
             },
