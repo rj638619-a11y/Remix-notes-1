@@ -95,16 +95,20 @@ fun HomeTab(
 ) {
     val colors = GlassTheme.colors
 
-    val totalCount = notes.size
-    val pdfCount = notes.count { it.type == "pdf" }
-    val htmlCount = notes.count { it.type == "html" }
-    val favCount = notes.count { it.pinned }
+    // Performance Optimization (Bolt): Memoize category counts and filtered list queries
+    // to prevent full list iterations on every UI composition / animation frame.
+    val totalCount = remember(notes) { notes.size }
+    val pdfCount = remember(notes) { notes.count { it.type == "pdf" } }
+    val htmlCount = remember(notes) { notes.count { it.type == "html" } }
+    val favCount = remember(notes) { notes.count { it.pinned } }
 
-    val filteredNotes = when (selectedFilter) {
-        QuickCategoryFilter.ALL -> notes
-        QuickCategoryFilter.PDF -> notes.filter { it.type == "pdf" }
-        QuickCategoryFilter.HTML -> notes.filter { it.type == "html" }
-        QuickCategoryFilter.FAVORITES -> notes.filter { it.pinned }
+    val filteredNotes = remember(notes, selectedFilter) {
+        when (selectedFilter) {
+            QuickCategoryFilter.ALL -> notes
+            QuickCategoryFilter.PDF -> notes.filter { it.type == "pdf" }
+            QuickCategoryFilter.HTML -> notes.filter { it.type == "html" }
+            QuickCategoryFilter.FAVORITES -> notes.filter { it.pinned }
+        }
     }
 
     val statusBarTop = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
