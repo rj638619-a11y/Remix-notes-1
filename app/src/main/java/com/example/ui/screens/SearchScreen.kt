@@ -154,7 +154,7 @@ fun SearchScreen(
                     ) {
                         Icon(
                             imageVector = Icons.Outlined.Search,
-                            contentDescription = null,
+                            contentDescription = "Search icon",
                             tint = colors.textTertiary,
                             modifier = Modifier.size(18.dp)
                         )
@@ -175,7 +175,7 @@ fun SearchScreen(
                         )
                         if (query.isNotEmpty()) {
                             IconButton(onClick = { query = "" }, modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = colors.textTertiary, modifier = Modifier.size(16.dp))
+                                Icon(Icons.Default.Close, contentDescription = "Clear search text", tint = colors.textTertiary, modifier = Modifier.size(16.dp))
                             }
                         }
                     }
