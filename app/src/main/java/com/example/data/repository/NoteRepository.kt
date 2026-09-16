@@ -808,7 +808,9 @@ class NoteRepository(
                             sender = mObj.optString("sender", "user"),
                             content = mObj.optString("content", ""),
                             timestamp = mObj.optLong("timestamp", System.currentTimeMillis()),
-                            modelUsed = mObj.optString("modelUsed", null).takeIf { it != "null" && it.isNotBlank() }
+                            modelUsed = if (mObj.has("modelUsed") && !mObj.isNull("modelUsed")) {
+                                mObj.optString("modelUsed").takeIf { it != "null" && it.isNotBlank() }
+                            } else null
                         )
                     )
                 }
